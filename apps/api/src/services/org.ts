@@ -45,7 +45,7 @@ export async function createCompany(ctx: Ctx, userId: string, input: z.input<typ
   const data = createCompanyInput.parse(input);
   return ctx.db.transaction(async (tx) => {
     const [company] = await tx.insert(companies).values({ name: data.name }).returning();
-    await tx.insert(memberships).values({ companyId: company!.id, userId, roles: ['OWNER'], position: 'CEO' });
+    await tx.insert(memberships).values({ companyId: company!.id, userId, roles: ['OWNER'], position: 'CEO', joinedAt: ctx.now() });
     if (data.departments.length) {
       await tx.insert(departments).values(data.departments.map((d) => ({ companyId: company!.id, name: d.name, kpiTemplate: d.kpiTemplate })));
     }
@@ -230,6 +230,7 @@ export async function acceptInvitation(ctx: Ctx, userId: string, token: string) 
       roles: [inv.role],
       departmentId: inv.departmentId,
       position: inv.position,
+      joinedAt: ctx.now(),
     });
     await tx.update(invitations).set({ uses: inv.uses + 1 }).where(eq(invitations.id, inv.id));
     await audit(tx as unknown as Db, { userId, companyId: inv.companyId }, 'invitation.accept', 'invitation', inv.id, { role: inv.role });

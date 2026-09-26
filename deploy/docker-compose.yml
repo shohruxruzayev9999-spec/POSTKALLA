@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30", "-c", "work_mem=4MB"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: { context: .., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: postgres://erp:${DB_PASSWORD}@db:5432/erp
+      BOT_TOKEN: ${BOT_TOKEN:?set BOT_TOKEN}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      WEBAPP_URL: https://${DOMAIN}
+      CORS_ORIGINS: https://${DOMAIN}
+      NODE_ENV: production
+      LOG_LEVEL: info
+    mem_limit: 400m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [api]
+    ports: ["80:80", "443:443"]
+    environment: { DOMAIN: "${DOMAIN}" }
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro
+      - caddy_data:/data
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on: [db]
+    environment: { PGPASSWORD: "${DB_PASSWORD}" }
+    volumes: [./backups:/backups]
+    # Nightly dump, keep 14 days.
+    entrypoint: ["sh", "-c", "while true; do pg_dump -h db -U erp erp | gzip > /backups/erp-$$(date +%F).sql.gz; find /backups -name '*.sql.gz' -mtime +14 -delete; sleep 86400; done"]
+
+volumes:
+  pgdata:
+  caddy_data:

@@ -1,0 +1,42 @@
+name: CI / Deploy
+on:
+  push: { branches: [main] }
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build -w @retarget/shared
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build -w @retarget/web
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci && npm run build -w @retarget/shared && npm run build -w @retarget/web
+        env: { VITE_BOT_USERNAME: "${{ vars.BOT_USERNAME }}" }
+      - name: Ship to server
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          HOST: ${{ secrets.SSH_HOST }}
+          USER: ${{ secrets.SSH_USER }}
+        run: |
+          mkdir -p ~/.ssh && echo "$SSH_KEY" > ~/.ssh/key && chmod 600 ~/.ssh/key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+          rm -rf deploy/web && cp -r apps/web/dist deploy/web
+          tar czf /tmp/release.tgz --exclude=node_modules --exclude=.git --exclude='*/dist' package.json package-lock.json tsconfig.base.json packages apps deploy
+          scp -i ~/.ssh/key /tmp/release.tgz "$USER@$HOST:/tmp/release.tgz"
+          ssh -i ~/.ssh/key "$USER@$HOST" 'set -e; mkdir -p ~/retarget-erp-v2 && tar xzf /tmp/release.tgz -C ~/retarget-erp-v2 && cd ~/retarget-erp-v2/deploy && docker compose up -d --build && docker image prune -f && sleep 8 && curl -fsS https://$(grep ^DOMAIN= .env | cut -d= -f2)/api/health'

@@ -3,7 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import { ACTIONS, DomainError, ROLES, scopesFor, type TaskAction } from '@retarget/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
-import { issueToken, upsertTelegramUser, verifyInitData, verifyToken } from '../auth/telegram.js';
+import { findUserByTelegram, issueToken, upsertTelegramUser, verifyInitData, verifyToken } from '../auth/telegram.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import * as analytics from '../services/analytics.js';
@@ -72,7 +72,7 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   if (cfg.devLogin) {
     app.post('/api/auth/dev', async (req) => {
       const body = z.object({ telegramId: z.number().int(), firstName: z.string().min(1) }).parse(req.body);
-      const user = await upsertTelegramUser(ctx.db, { id: body.telegramId, first_name: body.firstName });
+      const user = (await findUserByTelegram(ctx.db, body.telegramId)) ?? (await upsertTelegramUser(ctx.db, { id: body.telegramId, first_name: body.firstName }));
       return { token: await issueToken(user.id, cfg.jwtSecret), user, startParam: null, companies: await org.myCompanies(ctx.db, user.id) };
     });
   }

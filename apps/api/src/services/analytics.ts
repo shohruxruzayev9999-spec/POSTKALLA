@@ -59,7 +59,7 @@ export async function scoresFor(ctx: Ctx, company: Company, userIds: string[], m
     .where(and(eq(attendance.companyId, company.id), inArray(attendance.userId, userIds), gte(attendance.day, `${m}-01`), lt(attendance.day, localDateString(to, company.timezone))));
   const ratings = await ctx.db.select().from(kpiRatings).where(and(eq(kpiRatings.companyId, company.id), eq(kpiRatings.month, m), inArray(kpiRatings.userId, userIds)));
   const members = await ctx.db
-    .select({ userId: memberships.userId, template: departments.kpiTemplate })
+    .select({ userId: memberships.userId, template: departments.kpiTemplate, joinedAt: memberships.joinedAt })
     .from(memberships)
     .leftJoin(departments, eq(departments.id, memberships.departmentId))
     .where(and(eq(memberships.companyId, company.id), inArray(memberships.userId, userIds)));
@@ -83,10 +83,16 @@ export async function scoresFor(ctx: Ctx, company: Company, userIds: string[], m
 
     const inMonth = (d: Date | null) => !!d && d >= from && d < to;
     const done = mine.filter((t) => t.status === 'DONE' && inMonth(t.completedAt));
-    const planned = mine.filter((t) => t.status !== 'CANCELLED' && inMonth(t.originalDeadline));
-    const myAtt = att.filter((a) => a.userId === userId && workDates.includes(a.day));
+    // The plan so far: work that was due by now (or already delivered) — tasks due later this
+    // month must not drag the score down on the 5th.
+    const planned = mine.filter((t) => t.status !== 'CANCELLED' && inMonth(t.originalDeadline) && (t.originalDeadline <= now || t.status === 'DONE'));
+    // Days before someone joined are not absences.
+    const member = members.find((x) => x.userId === userId);
+    const joined = member ? localDateString(member.joinedAt, company.timezone) : '0000-00-00';
+    const myWorkDates = workDates.filter((d) => d >= joined);
+    const myAtt = att.filter((a) => a.userId === userId && myWorkDates.includes(a.day));
     const rating = ratings.find((r) => r.userId === userId);
-    const templateKey = (members.find((x) => x.userId === userId)?.template ?? 'DEFAULT') as KpiTemplate;
+    const templateKey = (member?.template ?? 'DEFAULT') as KpiTemplate;
     const weights = KPI_TEMPLATES[templateKey] ?? KPI_TEMPLATES.DEFAULT;
 
     const kpi = computeKpi(
@@ -97,7 +103,7 @@ export async function scoresFor(ctx: Ctx, company: Company, userIds: string[], m
         approvedFirstPass: done.filter((t) => t.revision === 1).length,
         donePoints: done.reduce((s, t) => s + t.points, 0),
         planPoints: planned.reduce((s, t) => s + t.points, 0),
-        workDays: workDates.length,
+        workDays: myWorkDates.length,
         onTimeDays: myAtt.filter((a) => a.checkIn && a.lateMinutes <= 0).length,
         managerRating: rating?.rating ?? null,
       },
@@ -120,7 +126,7 @@ export async function scoresFor(ctx: Ctx, company: Company, userIds: string[], m
         doneThisMonth: done.length,
         lateDays: myAtt.filter((a) => a.lateMinutes > 0).length,
         presentDays: myAtt.filter((a) => a.checkIn).length,
-        workDays: workDates.length,
+        workDays: myWorkDates.length,
       },
     });
   }
