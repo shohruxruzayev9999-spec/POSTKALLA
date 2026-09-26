@@ -1,0 +1,35 @@
+name: Server
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: inspect (read-only) | deploy
+        required: true
+        default: inspect
+
+jobs:
+  inspect:
+    if: inputs.action == 'inspect'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read-only look at the server
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          HOST: ${{ secrets.SSH_HOST }}
+          USER: ${{ secrets.SSH_USER }}
+        run: |
+          mkdir -p ~/.ssh && echo "$SSH_KEY" > ~/.ssh/key && chmod 600 ~/.ssh/key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/key "$USER@$HOST" 'bash -s' <<'SH'
+          set +e
+          echo "== system"; uname -a; nproc; free -h; df -h / | tail -1
+          echo "== docker"; sudo docker ps --format "{{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}"
+          echo "== compose services (old app)"; ls ~/retarget-erp 2>/dev/null | head -30
+          for f in ~/retarget-erp/docker-compose*.y*ml; do echo "-- $f"; grep -nE '^\s{2}[a-zA-Z0-9_-]+:\s*$|image:|ports:|- "?[0-9.:]+:[0-9]+' "$f"; done
+          echo "== listening ports"; sudo ss -ltnp | awk '{print $4, $6}'
+          echo "== host nginx"; which nginx; systemctl is-active nginx; ls -la /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null
+          sudo grep -rnE 'server_name|listen|ssl_certificate |proxy_pass|root ' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -40
+          echo "== nginx inside docker"; for c in $(sudo docker ps --format '{{.Names}}' | grep -i nginx); do echo "-- $c"; sudo docker exec $c sh -c "grep -rnE 'server_name|listen|ssl_certificate |proxy_pass|root ' /etc/nginx/conf.d /etc/nginx/nginx.conf" | head -40; done
+          echo "== certbot"; which certbot; sudo ls /etc/letsencrypt/live 2>/dev/null
+          echo "== ~/"; ls ~
+          SH
