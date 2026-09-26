@@ -1,0 +1,80 @@
+import { describe, expect, it } from 'vitest';
+import { DomainError } from './errors.js';
+import { assertCanGrantRole, assertNotSelf, assertOwnerRemains, canAccess, type Actor } from './permissions.js';
+
+const base = { companyId: 'c1', departmentIds: [], headOfDepartmentIds: [], projectIds: [] };
+const employee: Actor = { ...base, userId: 'u-emp', roles: ['EMPLOYEE'], departmentIds: ['d-design'] };
+const head: Actor = { ...base, userId: 'u-head', roles: ['DEPT_HEAD'], departmentIds: ['d-design'], headOfDepartmentIds: ['d-design'] };
+const pm: Actor = { ...base, userId: 'u-pm', roles: ['PM'], projectIds: ['p-kafe'] };
+const hr: Actor = { ...base, userId: 'u-hr', roles: ['HR'] };
+const admin: Actor = { ...base, userId: 'u-admin', roles: ['ADMIN'] };
+const owner: Actor = { ...base, userId: 'u-owner', roles: ['OWNER'] };
+
+describe('permissions — the security holes found in the old system stay closed', () => {
+  it('an employee cannot see company finance', () => {
+    expect(canAccess(employee, 'finance.view', { companyId: 'c1' })).toBe(false);
+  });
+
+  it('an employee cannot manage employees (so cannot promote themself)', () => {
+    expect(canAccess(employee, 'employee.manage', { companyId: 'c1', departmentId: 'd-design', ownerUserIds: ['u-emp'] })).toBe(false);
+  });
+
+  it('an employee sees only their own salary', () => {
+    expect(canAccess(employee, 'salary.view', { companyId: 'c1', ownerUserIds: ['u-emp'] })).toBe(true);
+    expect(canAccess(employee, 'salary.view', { companyId: 'c1', ownerUserIds: ['u-other'] })).toBe(false);
+  });
+
+  it('an employee sees their department board but manages only own tasks', () => {
+    expect(canAccess(employee, 'task.view', { companyId: 'c1', departmentId: 'd-design', ownerUserIds: ['u-x'] })).toBe(true);
+    expect(canAccess(employee, 'task.manage', { companyId: 'c1', departmentId: 'd-design', ownerUserIds: ['u-x'] })).toBe(false);
+    expect(canAccess(employee, 'task.manage', { companyId: 'c1', ownerUserIds: ['u-emp'] })).toBe(true);
+  });
+
+  it('a department head reviews only in the department they head', () => {
+    expect(canAccess(head, 'task.review', { companyId: 'c1', departmentId: 'd-design' })).toBe(true);
+    expect(canAccess(head, 'task.review', { companyId: 'c1', departmentId: 'd-video' })).toBe(false);
+  });
+
+  it('a PM works inside their own projects only', () => {
+    expect(canAccess(pm, 'project.manage', { companyId: 'c1', projectId: 'p-kafe' })).toBe(true);
+    expect(canAccess(pm, 'project.manage', { companyId: 'c1', projectId: 'p-other' })).toBe(false);
+  });
+
+  it('admin runs the company but never sees salaries or finance', () => {
+    expect(canAccess(admin, 'employee.manage', { companyId: 'c1' })).toBe(true);
+    expect(canAccess(admin, 'salary.view', { companyId: 'c1', ownerUserIds: ['u-emp'] })).toBe(false);
+    expect(canAccess(admin, 'finance.view', { companyId: 'c1' })).toBe(false);
+  });
+
+  it('nobody crosses tenants, not even an owner', () => {
+    expect(canAccess(owner, 'task.view', { companyId: 'c2' })).toBe(false);
+  });
+});
+
+describe('hard rules', () => {
+  it('nobody edits their own role, salary, attendance or KPI rating', () => {
+    expect(() => assertNotSelf(hr, 'salary.manage', 'u-hr')).toThrow(DomainError);
+    expect(() => assertNotSelf(head, 'kpi.rate', 'u-head')).toThrow(DomainError);
+    expect(() => assertNotSelf(admin, 'employee.manage', 'u-admin')).toThrow(DomainError);
+    expect(() => assertNotSelf(hr, 'salary.manage', 'u-emp')).not.toThrow();
+  });
+
+  it('nobody grants a role at or above their own rank', () => {
+    expect(() => assertCanGrantRole(admin, 'OWNER')).toThrow(DomainError);
+    expect(() => assertCanGrantRole(admin, 'ADMIN')).toThrow(DomainError);
+    expect(() => assertCanGrantRole(admin, 'HR')).not.toThrow();
+    expect(() => assertCanGrantRole(hr, 'HR')).toThrow(DomainError);
+    expect(() => assertCanGrantRole(hr, 'PM')).not.toThrow();
+    expect(() => assertCanGrantRole(owner, 'OWNER')).not.toThrow();
+  });
+
+  it('a department head may invite only plain employees', () => {
+    expect(() => assertCanGrantRole(head, 'EMPLOYEE')).not.toThrow();
+    expect(() => assertCanGrantRole(head, 'PM')).toThrow(DomainError);
+  });
+
+  it('the last owner cannot be removed', () => {
+    expect(() => assertOwnerRemains(0)).toThrow(DomainError);
+    expect(() => assertOwnerRemains(1)).not.toThrow();
+  });
+});
