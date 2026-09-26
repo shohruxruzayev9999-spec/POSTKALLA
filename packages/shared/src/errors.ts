@@ -11,7 +11,8 @@ export type DomainErrorCode =
   | 'COMMENT_REQUIRED'
   | 'FILE_REQUIRED'
   | 'NOT_FOUND'
-  | 'VALIDATION';
+  | 'VALIDATION'
+  | 'UNAUTHORIZED';
 
 const STATUS_BY_CODE: Record<DomainErrorCode, number> = {
   FORBIDDEN: 403,
@@ -23,6 +24,7 @@ const STATUS_BY_CODE: Record<DomainErrorCode, number> = {
   FILE_REQUIRED: 422,
   NOT_FOUND: 404,
   VALIDATION: 422,
+  UNAUTHORIZED: 401,
 };
 
 export class DomainError extends Error {
