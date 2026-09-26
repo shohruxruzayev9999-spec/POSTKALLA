@@ -101,7 +101,7 @@ function isoDate(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-interface LocalDay {
+export interface LocalDay {
   y: number;
   m: number;
   d: number;
@@ -202,4 +202,31 @@ export function addWorkingHours(start: Date, hours: number, schedule: WorkSchedu
     if (nw) cursor = nw[0];
   }
   throw new Error('Ish jadvalida ish kunlari topilmadi');
+}
+
+/** Local calendar date "YYYY-MM-DD" of an instant in the schedule's zone. */
+export function localDateString(date: Date, tz: string): string {
+  const p = localParts(date, tz);
+  return isoDate(p.year, p.month, p.day);
+}
+
+/** Working dates ("YYYY-MM-DD") of a calendar month, optionally only up to and including `until`. */
+export function workingDatesOfMonth(year: number, month: number, schedule: WorkSchedule, until?: string): string[] {
+  const out: string[] = [];
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  let day: LocalDay = { y: year, m: month, d: 1, weekday: ((first.getUTCDay() + 6) % 7) + 1 };
+  while (day.m === month && day.y === year) {
+    const iso = isoDate(day.y, day.m, day.d);
+    if (until && iso > until) break;
+    if (isWorkingDay(day, schedule)) out.push(iso);
+    day = nextDay(day);
+  }
+  return out;
+}
+
+/** Minutes after the working-day start at which `date` falls (negative when early). */
+export function minutesAfterStart(date: Date, schedule: WorkSchedule): number {
+  const p = localParts(date, schedule.timezone);
+  const [sh, sm] = parseHm(schedule.start);
+  return p.hour * 60 + p.minute - (sh * 60 + sm);
 }

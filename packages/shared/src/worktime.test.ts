@@ -3,6 +3,9 @@ import {
   DEFAULT_SCHEDULE,
   addWorkingHours,
   isWorkingTime,
+  localDateString,
+  minutesAfterStart,
+  workingDatesOfMonth,
   nextWorkingMoment,
   workingHoursBetween,
   zonedTime,
@@ -60,5 +63,18 @@ describe('worktime (Asia/Tashkent, 10–18, Mon–Sat)', () => {
     const from = zonedTime(2026, 10, 23, 16, 0, 'Europe/Berlin');
     const to = zonedTime(2026, 10, 26, 10, 0, 'Europe/Berlin');
     expect(workingHoursBetween(from, to, berlin)).toBe(2);
+  });
+
+  it('lists working dates of a month', () => {
+    const sep = workingDatesOfMonth(2026, 9, S);
+    expect(sep).toHaveLength(26); // 30 days − 4 Sundays
+    expect(sep[0]).toBe('2026-09-01');
+    expect(workingDatesOfMonth(2026, 9, S, '2026-09-05')).toHaveLength(5);
+  });
+
+  it('local date and lateness', () => {
+    expect(localDateString(new Date('2026-09-26T20:30:00Z'), 'Asia/Tashkent')).toBe('2026-09-27');
+    expect(minutesAfterStart(tk(2026, 9, 26, 10, 17), S)).toBe(17);
+    expect(minutesAfterStart(tk(2026, 9, 26, 9, 50), S)).toBe(-10);
   });
 });
