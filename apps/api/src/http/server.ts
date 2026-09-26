@@ -57,7 +57,7 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
     return loadActor(ctx.db, req.userId!, companyId);
   };
   const idParam = z.object({ id: z.string().uuid() });
-  const inviteLink = (token: string) => `https://t.me/${cfg.botUsername}?startapp=inv_${token}`;
+  const inviteLink = (token: string) => `https://t.me/${cfg.botUsername}/app?startapp=inv_${token}`;
 
   app.get('/api/health', async () => ({ ok: true, time: ctx.now().toISOString() }));
 

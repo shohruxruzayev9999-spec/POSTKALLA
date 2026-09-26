@@ -33,3 +33,36 @@ jobs:
           echo "== certbot"; which certbot; sudo ls /etc/letsencrypt/live 2>/dev/null
           echo "== ~/"; ls ~
           SH
+
+  deploy:
+    if: inputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    concurrency: deploy
+    env:
+      DOMAIN: postkalla.3-122-101-164.nip.io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Test
+        run: npm ci && npm run build -w @retarget/shared && npm test
+      - name: Build web
+        run: npm run build -w @retarget/web && tar czf /tmp/postkalla-web.tar.gz -C apps/web/dist .
+        env: { VITE_BOT_USERNAME: postkallabot }
+      - name: Build API image
+        run: docker build -f apps/api/Dockerfile -t postkalla-api:latest . && docker save postkalla-api:latest | gzip > /tmp/postkalla-api.tar.gz
+      - name: Ship and start
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          HOST: ${{ secrets.SSH_HOST }}
+          USER: ${{ secrets.SSH_USER }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: |
+          mkdir -p ~/.ssh && echo "$SSH_KEY" > ~/.ssh/key && chmod 600 ~/.ssh/key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          S="ssh -i ~/.ssh/key $USER@$HOST"
+          $S 'mkdir -p ~/postkalla'
+          scp -i ~/.ssh/key /tmp/postkalla-api.tar.gz /tmp/postkalla-web.tar.gz "$USER@$HOST:/tmp/"
+          scp -i ~/.ssh/key deploy/compose.shared.yml deploy/remote-deploy.sh "$USER@$HOST:postkalla/"
+          printf '%s' "$BOT_TOKEN" | $S 'umask 077; cat > ~/postkalla/.bot_token'
+          $S "bash ~/postkalla/remote-deploy.sh $DOMAIN"

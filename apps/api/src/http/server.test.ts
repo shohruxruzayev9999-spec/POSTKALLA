@@ -32,7 +32,7 @@ describe('HTTP API', () => {
     const H = (t: string, companyId?: string) => ({ authorization: `Bearer ${t}`, ...(companyId ? { 'x-company-id': companyId } : {}) });
     const company = (await app.inject({ method: 'POST', url: '/api/companies', headers: H(boss.token), payload: { name: 'Nova Agency' } })).json();
     const inv = (await app.inject({ method: 'POST', url: '/api/invitations', headers: H(boss.token, company.id), payload: { role: 'EMPLOYEE' } })).json();
-    expect(inv.link).toBe(`https://t.me/retarget_test_bot?startapp=inv_${inv.token}`);
+    expect(inv.link).toBe(`https://t.me/retarget_test_bot/app?startapp=inv_${inv.token}`);
 
     const emp = await login(888, 'Emp', `inv_${inv.token}`);
     expect(emp.startParam).toBe(`inv_${inv.token}`);

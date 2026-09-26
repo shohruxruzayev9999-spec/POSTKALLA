@@ -1,0 +1,41 @@
+# Runs next to the old ERP on the same host: own Postgres, API on 127.0.0.1:8090 only.
+# Host nginx (already on the server) terminates TLS and serves the web build.
+name: postkalla
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?}
+    command: ["postgres", "-c", "shared_buffers=48MB", "-c", "max_connections=25", "-c", "work_mem=4MB"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp"]
+      interval: 5s
+      retries: 20
+  api:
+    image: postkalla-api:latest
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["127.0.0.1:8090:8080"]
+    environment:
+      DATABASE_URL: postgres://erp:${DB_PASSWORD}@db:5432/erp
+      BOT_TOKEN: ${BOT_TOKEN:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      WEBAPP_URL: https://${DOMAIN}
+      CORS_ORIGINS: https://${DOMAIN}
+      NODE_ENV: production
+    mem_limit: 350m
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on: [db]
+    environment: { PGPASSWORD: "${DB_PASSWORD}" }
+    volumes: [./backups:/backups]
+    entrypoint: ["sh", "-c", "while true; do pg_dump -h db -U erp erp | gzip > /backups/erp-$$(date +%F).sql.gz; find /backups -name '*.sql.gz' -mtime +14 -delete; sleep 86400; done"]
+    mem_limit: 64m
+volumes:
+  pgdata:
