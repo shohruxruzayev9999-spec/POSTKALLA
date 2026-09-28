@@ -1,6 +1,6 @@
-import { and, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import { buildReminderPlan, resolveDueSteps, type ReminderStep } from '@retarget/shared';
-import { companies, departments, memberships, projects, reminderLog, reminderMessages, tasks, users } from '../db/schema.js';
+import { companies, departments, memberships, projects, reminderLog, reminderMessages, taskEvents, tasks, users } from '../db/schema.js';
 import { reminderPolicyOf, scheduleOf, type Ctx } from '../services/context.js';
 import { taskCard } from '../services/tasks.js';
 
@@ -16,7 +16,7 @@ export async function runReminders(ctx: Ctx): Promise<{ sent: number; skipped: n
   const now = ctx.now();
   const horizon = new Date(now.getTime() + 25 * 3_600_000);
   const rows = await ctx.db
-    .select({ t: tasks, c: companies, chat: projects.telegramChatId, headUserId: departments.headUserId })
+    .select({ t: tasks, c: companies, chat: projects.telegramChatId, pmUserId: projects.managerUserId, headUserId: departments.headUserId })
     .from(tasks)
     .innerJoin(companies, eq(companies.id, tasks.companyId))
     .leftJoin(projects, eq(projects.id, tasks.projectId))
@@ -25,10 +25,12 @@ export async function runReminders(ctx: Ctx): Promise<{ sent: number; skipped: n
 
   let sent = 0;
   let skipped = 0;
-  for (const { t, c, chat, headUserId } of rows) {
+  for (const { t, c, chat, pmUserId, headUserId } of rows) {
+    // The manager who hears about it: the project manager, else the reviewer, else the department head.
+    const managerUserId = [pmUserId, t.reviewerUserId, headUserId].find((id) => id && id !== t.assigneeUserId) ?? null;
     const plan = buildReminderPlan({ deadline: t.deadline, createdAt: t.createdAt }, scheduleOf(c), reminderPolicyOf(c));
     const handled = await ctx.db
-      .select({ key: reminderLog.stepKey })
+      .select({ key: reminderLog.stepKey, at: reminderLog.handledAt, sent: reminderLog.sent })
       .from(reminderLog)
       .where(and(eq(reminderLog.taskId, t.id), eq(reminderLog.deadline, t.deadline)));
     const { send, skip } = resolveDueSteps(plan, now, new Set(handled.map((h) => h.key)));
@@ -37,7 +39,7 @@ export async function runReminders(ctx: Ctx): Promise<{ sent: number; skipped: n
     const claim = async (key: string, wasSent: boolean) => {
       const r = await ctx.db
         .insert(reminderLog)
-        .values({ taskId: t.id, stepKey: key, deadline: t.deadline, sent: wasSent })
+        .values({ taskId: t.id, stepKey: key, deadline: t.deadline, sent: wasSent, handledAt: now })
         .onConflictDoNothing()
         .returning({ key: reminderLog.stepKey });
       return r.length > 0;
@@ -45,8 +47,21 @@ export async function runReminders(ctx: Ctx): Promise<{ sent: number; skipped: n
     for (const key of skip) if (await claim(key, false)) skipped++;
 
     for (const step of send) {
+      // CEO only if nothing moved since the manager was told ("1 soat ichida status o'zgarmasa").
+      const managerStep = handled.find((h) => h.key === 'escalate-manager' && h.sent);
+      if (step.key === 'escalate-ceo' && managerStep) {
+        const [moved] = await ctx.db
+          .select({ id: taskEvents.id })
+          .from(taskEvents)
+          .where(and(eq(taskEvents.taskId, t.id), isNotNull(taskEvents.toStatus), gt(taskEvents.createdAt, managerStep.at)))
+          .limit(1);
+        if (moved) {
+          if (await claim(step.key, false)) skipped++;
+          continue;
+        }
+      }
       if (!(await claim(step.key, true))) continue; // another worker got it
-      await deliver(ctx, t.id, c.id, step, chat, headUserId, t.assigneeUserId, t.isPrivate);
+      await deliver(ctx, t.id, c.id, step, chat, managerUserId, t.assigneeUserId, t.isPrivate);
       sent++;
     }
   }
@@ -59,13 +74,13 @@ async function deliver(
   companyId: string,
   step: ReminderStep,
   groupChatId: number | null,
-  headUserId: string | null,
+  managerUserId: string | null,
   assigneeUserId: string,
   isPrivate: boolean,
 ) {
   const recipients = new Set<string>();
   if (step.audience.includes('ASSIGNEE')) recipients.add(assigneeUserId);
-  if (step.audience.includes('DEPT_HEAD') && headUserId && headUserId !== assigneeUserId) recipients.add(headUserId);
+  if (step.audience.includes('MANAGER') && managerUserId && managerUserId !== assigneeUserId) recipients.add(managerUserId);
   if (step.audience.includes('CEO')) {
     const owners = await ctx.db
       .select({ id: memberships.userId })

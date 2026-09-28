@@ -116,3 +116,6 @@ export const KPI_LABEL: Record<string, string> = {
   attendance: 'Intizom',
 };
 
+
+export const FORMATS = ['Post', 'Karusel', 'Banner', 'Story', 'Reels', 'Video', 'Logo', 'Prezentatsiya', 'Kontent-reja', 'Target', 'Boshqa'];
+export const PLATFORMS = ['Instagram', 'Telegram', 'Facebook', 'TikTok', 'YouTube', 'Sayt', 'Boshqa'];

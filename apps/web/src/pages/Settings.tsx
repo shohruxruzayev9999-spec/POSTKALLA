@@ -26,7 +26,7 @@ function CompanyForm() {
   const { session, fail, toast } = useApp();
   const qc = useQueryClient();
   const c = session.ctx.company;
-  const policy = c.reminderPolicy as { escalateAtReminder?: number; skipDeptHead?: boolean };
+  const policy = c.reminderPolicy as { overdueWorkingHours?: number[]; managerAfterWorkingHours?: number; ceoAfterWorkingHours?: number; skipManager?: boolean; skipDeptHead?: boolean };
   const [form, setForm] = useState({
     name: c.name,
     workDays: c.workDays,
@@ -36,8 +36,10 @@ function CompanyForm() {
     officeLat: c.officeLat,
     officeLng: c.officeLng,
     officeRadiusM: c.officeRadiusM,
-    escalateAtReminder: policy.escalateAtReminder ?? 3,
-    skipDeptHead: policy.skipDeptHead ?? false,
+    reminders: policy.overdueWorkingHours?.length ?? 3,
+    managerAfter: policy.managerAfterWorkingHours ?? 1,
+    ceoAfter: policy.ceoAfterWorkingHours ?? 1,
+    skipManager: policy.skipManager ?? policy.skipDeptHead ?? false,
   });
   const save = useMutation({
     mutationFn: () =>
@@ -52,7 +54,7 @@ function CompanyForm() {
           officeLat: form.officeLat,
           officeLng: form.officeLng,
           officeRadiusM: form.officeRadiusM,
-          reminderPolicy: { escalateAtReminder: form.escalateAtReminder, skipDeptHead: form.skipDeptHead },
+          reminderPolicy: { overdueWorkingHours: Array.from({ length: form.reminders }, (_, i) => i * 2), managerAfterWorkingHours: form.managerAfter, ceoAfterWorkingHours: form.ceoAfter, skipManager: form.skipManager },
         },
       }),
     onSuccess: () => {
@@ -121,18 +123,35 @@ function CompanyForm() {
 
       <div className="section-title" style={{ marginTop: 6 }}>Eslatmalar</div>
       <div className="small muted" style={{ lineHeight: 1.5 }}>
-        Deadline’dan 24 va 2 soat oldin eslatiladi. Muddat o‘tgach har 2 ish soatida eslatma keladi; har yangisi eskisini o‘chiradi.
+        Deadline’dan 24 va 2 soat oldin eslatiladi. Muddat o‘tgach har 2 ish soatida ijrochiga eslatma keladi (har yangisi eskisini o‘chiradi).
+        Keyin loyiha menejeriga, holat o‘zgarmasa — CEO’ga xabar boradi.
       </div>
-      <Field label="Nechanchi eslatmada rahbarga xabar berilsin">
-        <select className="input" value={form.escalateAtReminder} onChange={(e) => setForm({ ...form, escalateAtReminder: Number(e.target.value) })}>
-          {[1, 2, 3].map((n) => (
-            <option key={n} value={n}>{n}-eslatmada</option>
+      <div className="grid grid-2">
+        <Field label="Ijrochiga necha eslatma">
+          <select className="input" value={form.reminders} onChange={(e) => setForm({ ...form, reminders: Number(e.target.value) })}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <option key={n} value={n}>{n} ta</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="CEO'ga (menejerdan keyin)">
+          <select className="input" value={form.ceoAfter} onChange={(e) => setForm({ ...form, ceoAfter: Number(e.target.value) })}>
+            {[1, 2, 3, 4, 8].map((n) => (
+              <option key={n} value={n}>{n} ish soatida</option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <Field label="Loyiha menejeriga (oxirgi eslatmadan keyin)">
+        <select className="input" value={form.managerAfter} onChange={(e) => setForm({ ...form, managerAfter: Number(e.target.value) })}>
+          {[0, 1, 2, 4].map((n) => (
+            <option key={n} value={n}>{n === 0 ? 'darhol' : `${n} ish soatida`}</option>
           ))}
         </select>
       </Field>
       <div className="seg">
-        <button className={!form.skipDeptHead ? 'on' : ''} onClick={() => setForm({ ...form, skipDeptHead: false })}>Bo‘lim boshlig‘i → CEO</button>
-        <button className={form.skipDeptHead ? 'on' : ''} onClick={() => setForm({ ...form, skipDeptHead: true })}>To‘g‘ri CEO</button>
+        <button className={!form.skipManager ? 'on' : ''} onClick={() => setForm({ ...form, skipManager: false })}>Menejer → CEO</button>
+        <button className={form.skipManager ? 'on' : ''} onClick={() => setForm({ ...form, skipManager: true })}>To‘g‘ri CEO</button>
       </div>
       <button className="btn primary block" disabled={save.isPending || form.workDays.length === 0} onClick={() => save.mutate()}>Saqlash</button>
     </div>

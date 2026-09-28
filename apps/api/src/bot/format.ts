@@ -46,9 +46,9 @@ export function reminderText(c: TaskCard, step: ReminderStep, tz?: string): stri
     case step.key.startsWith('before-'):
       return `⏳ ${who}, eslatma: ${head}\nDeadline: <b>${fmtDate(c.deadline, tz)}</b>`;
     case step.escalation === 'CEO':
-      return `🚨 <b>CEO diqqatiga</b>\n${head}\nIjrochi: ${who}\nDeadline ${fmtDate(c.deadline, tz)} edi — ${step.overdueCount} marta eslatildi, hanuz bajarilmagan.`;
-    case step.escalation === 'DEPT_HEAD':
-      return `⚠️ ${head}\nIjrochi: ${who}\nMuddat o‘tganiga ${step.overdueCount}-eslatma. Bo‘lim boshlig‘i xabardor qilindi.`;
+      return `🚨 <b>CEO diqqatiga</b>\n${head}\nIjrochi: ${who}\nDeadline ${fmtDate(c.deadline, tz)} edi — ${step.overdueCount} marta eslatildi, eskalatsiyadan keyin ham holat o‘zgarmadi.`;
+    case step.escalation === 'MANAGER':
+      return `⚠️ <b>Loyiha menejeri diqqatiga</b>\n${head}\nIjrochi: ${who}\nDeadline ${fmtDate(c.deadline, tz)} edi — ${step.overdueCount} marta eslatildi, hanuz yopilmagan. 1 ish soatida holat o‘zgarmasa, CEO’ga xabar beriladi.`;
     default:
       return `⏰ ${who}, ${head} muddati o‘tdi (${fmtDate(c.deadline, tz)}). ${step.overdueCount}-eslatma.`;
   }

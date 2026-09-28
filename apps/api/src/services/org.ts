@@ -76,9 +76,9 @@ export const updateCompanyInput = z.object({
     .object({
       beforeDeadlineHours: z.array(z.number().min(0).max(168)).max(5),
       overdueWorkingHours: z.array(z.number().min(0).max(80)).min(1).max(6),
-      escalateAtReminder: z.number().int().min(1).max(6),
+      managerAfterWorkingHours: z.number().min(0).max(40),
       ceoAfterWorkingHours: z.number().min(0).max(40),
-      skipDeptHead: z.boolean(),
+      skipManager: z.boolean(),
     })
     .partial()
     .optional(),

@@ -1,34 +1,52 @@
 import { addWorkingHours, nextWorkingMoment, type WorkSchedule } from './worktime.js';
 
 /**
- * Reminder and escalation plan for one task. The delivery worker stores which steps were sent
- * and, per chat, the Telegram message id of the last reminder — every new reminder deletes the
- * previous one, so a chat never holds more than one live reminder for a task.
+ * Reminder and escalation plan for one task (the "AI assistant" chain, CEO decision 29 Sep 2026).
+ * The delivery worker stores which steps were handled and, per chat, the Telegram message id of
+ * the last reminder — every new reminder deletes the previous one, so a chat never holds more
+ * than one live reminder for a task.
  *
- * Overdue timers count working hours only. The default chain: at the deadline, +2 h, +4 h
- * (department head joins), +6 h (CEO). With `skipDeptHead` the CEO joins at the third reminder.
+ * Timers count working hours only. Default chain:
+ *   before the deadline — 24 h and 2 h nudges to the assignee;
+ *   overdue — 3 reminders to the assignee (at the deadline, +2 h, +4 h);
+ *   still open 1 working hour after the 3rd → the project manager is told;
+ *   status still unchanged 1 working hour after that → the CEO is told.
  */
-export type ReminderAudience = 'ASSIGNEE' | 'GROUP' | 'DEPT_HEAD' | 'CEO';
+export type ReminderAudience = 'ASSIGNEE' | 'GROUP' | 'MANAGER' | 'CEO';
 
 export interface ReminderPolicy {
   /** Calendar hours before the deadline to nudge the assignee (moved into working time). */
   beforeDeadlineHours: number[];
   /** Working hours after the deadline for overdue reminders 1, 2, 3 … */
   overdueWorkingHours: number[];
-  /** 1-based index of the overdue reminder at which escalation starts. */
-  escalateAtReminder: number;
-  /** Working hours after the escalation reminder at which the CEO is told. */
+  /** Working hours after the last overdue reminder at which the project manager is told. */
+  managerAfterWorkingHours: number;
+  /** Working hours after the manager step at which the CEO is told (if the status did not change). */
   ceoAfterWorkingHours: number;
-  skipDeptHead: boolean;
+  /** Go straight from the reminders to the CEO. */
+  skipManager: boolean;
 }
 
 export const DEFAULT_REMINDER_POLICY: ReminderPolicy = {
   beforeDeadlineHours: [24, 2],
   overdueWorkingHours: [0, 2, 4],
-  escalateAtReminder: 3,
-  ceoAfterWorkingHours: 2,
-  skipDeptHead: false,
+  managerAfterWorkingHours: 1,
+  ceoAfterWorkingHours: 1,
+  skipManager: false,
 };
+
+/** Older saved policies used department-head naming; map them onto the current shape. */
+export function normalizePolicy(raw: Record<string, unknown> | null | undefined): ReminderPolicy {
+  const p = { ...DEFAULT_REMINDER_POLICY };
+  if (!raw) return p;
+  if (Array.isArray(raw.beforeDeadlineHours)) p.beforeDeadlineHours = raw.beforeDeadlineHours.filter((n): n is number => typeof n === 'number');
+  if (Array.isArray(raw.overdueWorkingHours) && raw.overdueWorkingHours.length) p.overdueWorkingHours = raw.overdueWorkingHours.filter((n): n is number => typeof n === 'number');
+  if (typeof raw.managerAfterWorkingHours === 'number') p.managerAfterWorkingHours = raw.managerAfterWorkingHours;
+  if (typeof raw.ceoAfterWorkingHours === 'number') p.ceoAfterWorkingHours = raw.ceoAfterWorkingHours;
+  if (typeof raw.skipManager === 'boolean') p.skipManager = raw.skipManager;
+  else if (typeof raw.skipDeptHead === 'boolean') p.skipManager = raw.skipDeptHead;
+  return p;
+}
 
 export interface ReminderStep {
   key: string;
@@ -36,7 +54,7 @@ export interface ReminderStep {
   audience: ReminderAudience[];
   /** How many overdue reminders have been sent once this step goes out (0 = not overdue). */
   overdueCount: number;
-  escalation: 'NONE' | 'DEPT_HEAD' | 'CEO';
+  escalation: 'NONE' | 'MANAGER' | 'CEO';
 }
 
 export function buildReminderPlan(
@@ -58,27 +76,19 @@ export function buildReminderPlan(
     steps.push({ key: `before-${h}h`, at, audience: ['ASSIGNEE'], overdueCount: 0, escalation: 'NONE' });
   }
 
-  policy.overdueWorkingHours.forEach((h, i) => {
-    const n = i + 1;
-    const escalate = n >= policy.escalateAtReminder;
-    const audience: ReminderAudience[] = ['ASSIGNEE', 'GROUP'];
-    let escalation: ReminderStep['escalation'] = 'NONE';
-    if (escalate) {
-      escalation = policy.skipDeptHead ? 'CEO' : 'DEPT_HEAD';
-      audience.push(escalation);
-    }
-    steps.push({ key: `overdue-${n}`, at: addWorkingHours(task.deadline, h, schedule), audience, overdueCount: n, escalation });
+  const overdue = [...policy.overdueWorkingHours].sort((a, b) => a - b);
+  overdue.forEach((h, i) => {
+    steps.push({ key: `overdue-${i + 1}`, at: addWorkingHours(task.deadline, h, schedule), audience: ['ASSIGNEE', 'GROUP'], overdueCount: i + 1, escalation: 'NONE' });
   });
 
-  if (!policy.skipDeptHead) {
-    const lastOverdue = policy.overdueWorkingHours[policy.overdueWorkingHours.length - 1] ?? 0;
-    steps.push({
-      key: 'escalate-ceo',
-      at: addWorkingHours(task.deadline, lastOverdue + policy.ceoAfterWorkingHours, schedule),
-      audience: ['CEO'],
-      overdueCount: policy.overdueWorkingHours.length,
-      escalation: 'CEO',
-    });
+  const last = overdue[overdue.length - 1] ?? 0;
+  const n = overdue.length;
+  if (policy.skipManager) {
+    steps.push({ key: 'escalate-ceo', at: addWorkingHours(task.deadline, last + policy.managerAfterWorkingHours, schedule), audience: ['CEO'], overdueCount: n, escalation: 'CEO' });
+  } else {
+    const managerAt = last + policy.managerAfterWorkingHours;
+    steps.push({ key: 'escalate-manager', at: addWorkingHours(task.deadline, managerAt, schedule), audience: ['MANAGER'], overdueCount: n, escalation: 'MANAGER' });
+    steps.push({ key: 'escalate-ceo', at: addWorkingHours(task.deadline, managerAt + policy.ceoAfterWorkingHours, schedule), audience: ['CEO'], overdueCount: n, escalation: 'CEO' });
   }
   return steps;
 }

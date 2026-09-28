@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REMINDER_POLICY, buildReminderPlan, resolveDueSteps } from './reminders.js';
+import { DEFAULT_REMINDER_POLICY, buildReminderPlan, normalizePolicy, resolveDueSteps } from './reminders.js';
 import { DEFAULT_SCHEDULE, zonedTime } from './worktime.js';
 
 const tk = (d: number, h: number, mi = 0) => zonedTime(2026, 9, d, h, mi, 'Asia/Tashkent');
@@ -14,23 +14,29 @@ describe('reminder & escalation plan', () => {
     expect(byKey['before-2h']?.at.getTime()).toBe(tk(25, 15).getTime());
   });
 
-  it('overdue reminders count working hours — they do not fire at night', () => {
+  it('3 overdue reminders to the assignee, counted in working hours', () => {
     expect(byKey['overdue-1']?.at.getTime()).toBe(tk(25, 17).getTime());
     expect(byKey['overdue-2']?.at.getTime()).toBe(tk(26, 11).getTime()); // Fri 17 + 2 h → Sat 11:00
     expect(byKey['overdue-3']?.at.getTime()).toBe(tk(26, 13).getTime());
+    expect(byKey['overdue-3']?.audience).toEqual(['ASSIGNEE', 'GROUP']);
   });
 
-  it('the 3rd reminder brings in the department head, then the CEO', () => {
-    expect(byKey['overdue-3']?.audience).toContain('DEPT_HEAD');
-    expect(byKey['overdue-3']?.escalation).toBe('DEPT_HEAD');
-    expect(byKey['escalate-ceo']?.audience).toEqual(['CEO']);
+  it('then the project manager (+1 h), then the CEO (+1 h more)', () => {
+    expect(byKey['escalate-manager']).toMatchObject({ audience: ['MANAGER'], escalation: 'MANAGER' });
+    expect(byKey['escalate-manager']?.at.getTime()).toBe(tk(26, 14).getTime());
+    expect(byKey['escalate-ceo']).toMatchObject({ audience: ['CEO'], escalation: 'CEO' });
     expect(byKey['escalate-ceo']?.at.getTime()).toBe(tk(26, 15).getTime());
   });
 
-  it('can skip the department head and go straight to the CEO at the 3rd reminder', () => {
-    const p = buildReminderPlan({ createdAt: tk(23, 10), deadline: tk(25, 17) }, DEFAULT_SCHEDULE, { ...DEFAULT_REMINDER_POLICY, skipDeptHead: true });
-    expect(p.find((s) => s.key === 'overdue-3')?.audience).toContain('CEO');
-    expect(p.some((s) => s.key === 'escalate-ceo')).toBe(false);
+  it('can skip the manager and go straight to the CEO', () => {
+    const p = buildReminderPlan({ createdAt: tk(23, 10), deadline: tk(25, 17) }, DEFAULT_SCHEDULE, { ...DEFAULT_REMINDER_POLICY, skipManager: true });
+    expect(p.some((s) => s.key === 'escalate-manager')).toBe(false);
+    expect(p.find((s) => s.key === 'escalate-ceo')?.at.getTime()).toBe(tk(26, 14).getTime());
+  });
+
+  it('reads old saved policies', () => {
+    expect(normalizePolicy({ skipDeptHead: true, escalateAtReminder: 3 }).skipManager).toBe(true);
+    expect(normalizePolicy(null)).toEqual(DEFAULT_REMINDER_POLICY);
   });
 
   it('drops nudges that would land before the task existed', () => {
@@ -40,9 +46,9 @@ describe('reminder & escalation plan', () => {
   });
 
   it('after downtime sends only the latest reminder, never skips an escalation', () => {
-    const r = resolveDueSteps(plan, tk(26, 13, 30), new Set());
-    expect(r.send.map((s) => s.key)).toEqual(['overdue-3']);
-    expect(r.skip).toEqual(['before-24h', 'before-2h', 'overdue-1', 'overdue-2']);
+    const r = resolveDueSteps(plan, tk(26, 14, 30), new Set());
+    expect(r.send.map((s) => s.key)).toEqual(['escalate-manager']);
+    expect(r.skip).toEqual(['before-24h', 'before-2h', 'overdue-1', 'overdue-2', 'overdue-3']);
   });
 
   it('sends nothing twice', () => {

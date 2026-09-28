@@ -1,113 +1,147 @@
 import { localParts, zonedTime } from '@retarget/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { api } from '../lib/api';
-import { ACTION, dateShort, leftText, PRIORITY, STATUS, when } from '../lib/format';
-import { useMembers, useProjects } from '../lib/queries';
-import type { TaskDetail, TaskListItem } from '../lib/types';
-import { Empty, Field, Icon, Sheet, Skeleton, StatusPill } from '../ui/kit';
+import { useDepartments, useMembers, useProjects } from '../lib/queries';
+import type { TaskListItem } from '../lib/types';
+import { Board } from '../ui/Board';
+import { Empty, Icon, Sheet, Skeleton } from '../ui/kit';
 import { go, useApp } from '../ui/state';
+import { TaskForm } from '../ui/TaskForm';
 import { TaskRow } from '../ui/TaskRow';
+import { TaskView } from '../ui/TaskView';
 
-type View = 'mine' | 'all';
-const FILTERS: Array<{ key: string; label: string; statuses: string[] }> = [
-  { key: 'open', label: 'Ochiq', statuses: ['NEW', 'IN_PROGRESS', 'RETURNED', 'BLOCKED', 'REVIEW'] },
-  { key: 'overdue', label: 'Kechikkan', statuses: [] },
-  { key: 'REVIEW', label: 'Tekshiruvda', statuses: ['REVIEW'] },
-  { key: 'DONE', label: 'Bajarilgan', statuses: ['DONE'] },
-];
-const COLUMNS: Array<{ title: string; statuses: string[] }> = [
-  { title: 'Yangi', statuses: ['NEW', 'RETURNED'] },
-  { title: 'Jarayonda', statuses: ['IN_PROGRESS', 'BLOCKED'] },
-  { title: 'Tekshiruvda', statuses: ['REVIEW'] },
-  { title: 'Bajarildi', statuses: ['DONE'] },
-];
+export { TaskForm } from '../ui/TaskForm';
+
+type View = 'board' | 'list' | 'calendar';
+const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+
+function readView(): View {
+  try {
+    const v = localStorage.getItem('rt.tasksView');
+    if (v === 'board' || v === 'list' || v === 'calendar') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'board';
+}
+
+export interface TaskFilters {
+  q: string;
+  projectId: string;
+  assigneeUserId: string;
+  departmentId: string;
+  onlyPrivate: boolean;
+}
+export const EMPTY_FILTERS: TaskFilters = { q: '', projectId: '', assigneeUserId: '', departmentId: '', onlyPrivate: false };
+
+export function applyFilters(all: TaskListItem[], f: TaskFilters) {
+  const needle = f.q.trim().toLowerCase();
+  return all.filter(
+    (t) =>
+      (!needle || `${t.number} ${t.title} ${t.project ?? ''} ${t.assignee.name} ${t.format ?? ''}`.toLowerCase().includes(needle)) &&
+      (!f.projectId || t.projectId === f.projectId) &&
+      (!f.assigneeUserId || t.assigneeUserId === f.assigneeUserId) &&
+      (!f.departmentId || t.departmentId === f.departmentId) &&
+      (!f.onlyPrivate || t.isPrivate),
+  );
+}
+
+/** Search + filter row shared by Tasks, Dizayn and Media. */
+export function FilterBar({ f, setF, hideDepartment }: { f: TaskFilters; setF: (f: TaskFilters) => void; hideDepartment?: boolean }) {
+  const projects = useProjects();
+  const members = useMembers();
+  const deps = useDepartments();
+  const active = [f.projectId, f.assigneeUserId, f.departmentId, f.onlyPrivate].filter(Boolean).length;
+  const sel = { minHeight: 40, padding: '8px 10px', fontSize: 13, width: 'auto', maxWidth: 190 } as const;
+  return (
+    <div className="row wrap" style={{ gap: 8 }}>
+      <div style={{ position: 'relative', flex: '1 1 200px' }}>
+        <input className="input" style={{ minHeight: 40, paddingLeft: 36 }} placeholder="Qidirish…" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
+        <span className="faint" style={{ position: 'absolute', left: 11, top: 10 }}><Icon name="search" size={18} /></span>
+      </div>
+      <select className="input" style={sel} value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })} aria-label="Loyiha">
+        <option value="">Barcha loyihalar</option>
+        {(projects.data ?? []).map((p) => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+      <select className="input" style={sel} value={f.assigneeUserId} onChange={(e) => setF({ ...f, assigneeUserId: e.target.value })} aria-label="Ijrochi">
+        <option value="">Barcha ijrochilar</option>
+        {(members.data ?? []).filter((m) => m.status === 'ACTIVE').map((m) => (
+          <option key={m.userId} value={m.userId}>{m.name}</option>
+        ))}
+      </select>
+      {!hideDepartment && (
+        <select className="input" style={sel} value={f.departmentId} onChange={(e) => setF({ ...f, departmentId: e.target.value })} aria-label="Bo'lim">
+          <option value="">Barcha bo'limlar</option>
+          {(deps.data ?? []).map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      )}
+      <button className={`chip ${f.onlyPrivate ? 'on' : ''}`} style={{ height: 40 }} onClick={() => setF({ ...f, onlyPrivate: !f.onlyPrivate })}>1:1</button>
+      {active > 0 && (
+        <button className="btn sm ghost" onClick={() => setF({ ...EMPTY_FILTERS, q: f.q })}>Tozalash</button>
+      )}
+    </div>
+  );
+}
 
 export function Tasks({ openId }: { openId?: string }) {
-  const { isManager, can } = useApp();
-  const [view, setView] = useState<View>(isManager ? 'all' : 'mine');
-  const [filter, setFilter] = useState('open');
-  const [q, setQ] = useState('');
+  const { can } = useApp();
+  const [view, setViewState] = useState<View>(readView);
+  const setView = (v: View) => {
+    setViewState(v);
+    try {
+      localStorage.setItem('rt.tasksView', v);
+    } catch {
+      /* ignore */
+    }
+  };
+  const [mine, setMine] = useState(false);
+  const [f, setF] = useState<TaskFilters>(EMPTY_FILTERS);
   const [creating, setCreating] = useState(false);
   const tasks = useQuery({
-    queryKey: ['tasks', { mine: view === 'mine', closed: true }],
-    queryFn: () => api<TaskListItem[]>('/tasks', { query: { mine: view === 'mine' || undefined, includeClosed: true } }),
+    queryKey: ['tasks', { mine, closed: true }],
+    queryFn: () => api<TaskListItem[]>('/tasks', { query: { mine: mine || undefined, includeClosed: true } }),
   });
-
-  const all = tasks.data ?? [];
-  const shown = useMemo(() => {
-    const f = FILTERS.find((x) => x.key === filter)!;
-    const needle = q.trim().toLowerCase();
-    return all
-      .filter((t) => (filter === 'overdue' ? t.overdue : f.statuses.includes(t.status)))
-      .filter((t) => !needle || `${t.number} ${t.title} ${t.project ?? ''} ${t.assignee.name}`.toLowerCase().includes(needle));
-  }, [all, filter, q]);
-  const count = (k: string) => (k === 'overdue' ? all.filter((t) => t.overdue).length : all.filter((t) => FILTERS.find((x) => x.key === k)!.statuses.includes(t.status)).length);
-  const desktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches;
+  const shown = useMemo(() => applyFilters(tasks.data ?? [], f), [tasks.data, f]);
 
   return (
     <div className="stack" style={{ gap: 14 }}>
-      <div className="row between">
+      <div className="row wrap between" style={{ gap: 10 }}>
         <h1 className="page-title">Vazifalar</h1>
-        {can('task.manage') && (
-          <button className="btn primary sm" onClick={() => setCreating(true)}>
-            <Icon name="plus" size={16} /> Yangi
-          </button>
-        )}
-      </div>
-
-      <div className="row wrap" style={{ gap: 10 }}>
-        <div className="seg" style={{ width: 220 }}>
-          <button className={view === 'mine' ? 'on' : ''} onClick={() => setView('mine')}>Mening</button>
-          <button className={view === 'all' ? 'on' : ''} onClick={() => setView('all')}>Jamoa</button>
-        </div>
-        <div className="grow" style={{ minWidth: 180, position: 'relative' }}>
-          <input className="input" style={{ minHeight: 42, paddingLeft: 38 }} placeholder="Qidirish…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <span className="faint" style={{ position: 'absolute', left: 12, top: 11 }}>
-            <Icon name="search" size={18} />
-          </span>
-        </div>
-      </div>
-
-      {!desktop && (
-        <div className="chips">
-          {FILTERS.map((f) => (
-            <button key={f.key} className={`chip ${filter === f.key ? 'on' : ''}`} onClick={() => setFilter(f.key)}>
-              {f.label} <span className="count">{count(f.key)}</span>
+        <div className="row" style={{ gap: 8 }}>
+          <div className="seg" style={{ width: 250 }}>
+            <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}>Doska</button>
+            <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>Ro'yxat</button>
+            <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>Kalendar</button>
+          </div>
+          {can('task.manage') && (
+            <button className="btn primary sm" onClick={() => setCreating(true)}>
+              <Icon name="plus" size={16} /> Yangi
             </button>
-          ))}
+          )}
         </div>
-      )}
+      </div>
+
+      <div className="row wrap" style={{ gap: 8 }}>
+        <div className="seg" style={{ width: 200 }}>
+          <button className={!mine ? 'on' : ''} onClick={() => setMine(false)}>Hammasi</button>
+          <button className={mine ? 'on' : ''} onClick={() => setMine(true)}>Meniki</button>
+        </div>
+        <div className="grow"><FilterBar f={f} setF={setF} /></div>
+      </div>
 
       {tasks.isPending ? (
         <Skeleton n={5} />
-      ) : desktop ? (
-        <div className="kanban">
-          {COLUMNS.map((col) => {
-            const items = all.filter((t) => col.statuses.includes(t.status)).filter((t) => !q || `${t.number} ${t.title} ${t.project ?? ''} ${t.assignee.name}`.toLowerCase().includes(q.toLowerCase()));
-            return (
-              <div key={col.title} className="col">
-                <div className="col-h">
-                  <span>{col.title}</span>
-                  <span className="muted">{items.length}</span>
-                </div>
-                {items.map((t) => (
-                  <TaskRow key={t.id} t={t} showAssignee={view === 'all'} />
-                ))}
-              </div>
-            );
-          })}
-        </div>
-      ) : shown.length === 0 ? (
-        <div className="card">
-          <Empty icon="🗂️" title="Bu yerda hozircha bo‘sh" />
-        </div>
+      ) : view === 'board' ? (
+        <Board board="main" tasks={shown.filter((t) => t.status !== 'CANCELLED')} />
+      ) : view === 'list' ? (
+        <TaskList tasks={shown} />
       ) : (
-        <div className="stack" style={{ gap: 8 }}>
-          {shown.map((t) => (
-            <TaskRow key={t.id} t={t} showAssignee={view === 'all'} />
-          ))}
-        </div>
+        <TaskCalendar tasks={shown} />
       )}
 
       <Sheet open={!!openId} onClose={() => go('tasks')} title={null} wide>
@@ -120,319 +154,112 @@ export function Tasks({ openId }: { openId?: string }) {
   );
 }
 
-// ------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------ list
 
-function TaskView({ id }: { id: string }) {
-  const { fail, toast, session } = useApp();
-  const qc = useQueryClient();
-  const task = useQuery({ queryKey: ['task', id], queryFn: () => api<TaskDetail>(`/tasks/${id}`) });
-  const [commentFor, setCommentFor] = useState<string | null>(null);
-  const [comment, setComment] = useState('');
-  const [editDeadline, setEditDeadline] = useState(false);
+export function dayKey(d: Date | string, tz: string) {
+  return new Date(d).toLocaleDateString('en-CA', { timeZone: tz });
+}
 
-  const act = useMutation({
-    mutationFn: (v: { action: string; comment?: string }) => api(`/tasks/${id}/actions`, { method: 'POST', body: v }),
-    onSuccess: (_d, v) => {
-      toast(`${ACTION[v.action]?.label ?? v.action} ✓`);
-      setCommentFor(null);
-      setComment('');
-      void qc.invalidateQueries({ queryKey: ['task', id] });
-      void qc.invalidateQueries({ queryKey: ['tasks'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard'] });
-    },
-    onError: fail,
-  });
-
-  if (task.isPending) return <Skeleton h={80} n={4} />;
-  if (task.isError || !task.data) return <Empty icon="🔒" title="Vazifa topilmadi yoki ko‘rishga ruxsat yo‘q" />;
-  const t = task.data;
-  const left = leftText(t.deadline);
-  const closed = t.status === 'DONE' || t.status === 'CANCELLED';
-  const moved = +new Date(t.deadline) !== +new Date(t.originalDeadline);
+export function TaskList({ tasks }: { tasks: TaskListItem[] }) {
+  const { session } = useApp();
   const tz = session.ctx.company.timezone;
-
+  const today = dayKey(new Date(), tz);
+  const tomorrow = dayKey(new Date(Date.now() + 86_400_000), tz);
+  const week = dayKey(new Date(Date.now() + 7 * 86_400_000), tz);
+  const open = tasks.filter((t) => !['DONE', 'CANCELLED'].includes(t.status));
+  const groups: Array<[string, TaskListItem[]]> = [
+    ["Muddati o'tgan", open.filter((t) => t.overdue)],
+    ['Bugun', open.filter((t) => !t.overdue && dayKey(t.deadline, tz) === today)],
+    ['Ertaga', open.filter((t) => dayKey(t.deadline, tz) === tomorrow)],
+    ['Shu hafta', open.filter((t) => { const k = dayKey(t.deadline, tz); return k > tomorrow && k <= week; })],
+    ['Keyinroq', open.filter((t) => dayKey(t.deadline, tz) > week)],
+    ['Bajarilgan (14 kun)', tasks.filter((t) => t.status === 'DONE')],
+  ];
+  if (!tasks.length) return <div className="card"><Empty icon="🗂️" title="Vazifa topilmadi" /></div>;
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="row" style={{ gap: 8 }}>
-          <span className="faint b">#{t.number}</span>
-          <StatusPill status={t.status} />
-          {t.revision > 1 && <span className="xs xb" style={{ color: 'var(--warn)' }}>R{t.revision}</span>}
-          <span className="grow" />
-          <span className={`xs b`} style={{ color: t.priority === 'HIGH' ? 'var(--danger)' : 'var(--muted)' }}>● {PRIORITY[t.priority]}</span>
+      {groups.filter(([, items]) => items.length).map(([title, items]) => (
+        <div key={title} className="stack" style={{ gap: 8 }}>
+          <div className="row between">
+            <div className="section-title" style={{ color: title.startsWith('Muddati') ? 'var(--danger)' : undefined }}>{title}</div>
+            <span className="small muted">{items.length}</span>
+          </div>
+          <div className="grid grid-auto" style={{ gap: 8 }}>
+            {[...items].sort((a, b) => +new Date(a.deadline) - +new Date(b.deadline)).map((t) => (
+              <TaskRow key={t.id} t={t} showAssignee />
+            ))}
+          </div>
         </div>
-        <h2 style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.25 }}>{t.title}</h2>
-        {!closed && (
-          <div className={`banner ${t.overdue ? 'danger' : 'warn'}`} style={{ padding: '10px 12px' }}>
-            <Icon name="clock" size={18} />
-            <div>
-              {t.overdue ? <b>Muddati o‘tdi — {left.text}</b> : <>Muddatigacha <b>{left.text}</b></>} · {when(t.deadline, tz)}
+      ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------------------------------ calendar
+
+export function TaskCalendar({ tasks }: { tasks: TaskListItem[] }) {
+  const { session } = useApp();
+  const tz = session.ctx.company.timezone;
+  const now = localParts(new Date(), tz);
+  const [ym, setYm] = useState<[number, number]>([now.year, now.month]);
+  const [day, setDay] = useState<string | null>(null);
+  const [y, m] = ym;
+  const startWd = localParts(zonedTime(y, m, 1, 12, 0, tz), tz).weekday; // 1..7
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const today = dayKey(new Date(), tz);
+  const byDay = new Map<string, TaskListItem[]>();
+  for (const t of tasks.filter((t) => t.status !== 'CANCELLED')) {
+    const k = dayKey(t.deadline, tz);
+    byDay.set(k, [...(byDay.get(k) ?? []), t]);
+  }
+  const shift = (d: number) => {
+    const dt = new Date(Date.UTC(y, m - 1 + d, 1));
+    setYm([dt.getUTCFullYear(), dt.getUTCMonth() + 1]);
+  };
+  const key = (d: number) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const dayTasks = day ? byDay.get(day) ?? [] : [];
+  return (
+    <div className="stack" style={{ gap: 12 }}>
+      <div className="row between">
+        <div className="section-title">{MONTHS[m - 1]} {y}</div>
+        <div className="row" style={{ gap: 4 }}>
+          <button className="btn sm ghost" aria-label="Oldingi oy" onClick={() => shift(-1)}>‹</button>
+          <button className="btn sm ghost" onClick={() => setYm([now.year, now.month])}>Bugun</button>
+          <button className="btn sm ghost" aria-label="Keyingi oy" onClick={() => shift(1)}>›</button>
+        </div>
+      </div>
+      <div className="cal">
+        {['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'].map((w) => (
+          <div key={w} className="cal-h">{w}</div>
+        ))}
+        {Array.from({ length: startWd - 1 }, (_, i) => (
+          <div key={`e${i}`} />
+        ))}
+        {Array.from({ length: days }, (_, i) => {
+          const k = key(i + 1);
+          const items = byDay.get(k) ?? [];
+          return (
+            <div key={k} className={`cal-d ${k === today ? 'today' : ''}`} onClick={() => setDay(k)} role="button" tabIndex={0}>
+              <div className="xs b" style={{ color: k === today ? 'var(--accent-ink)' : 'var(--muted)' }}>{i + 1}</div>
+              {items.slice(0, 3).map((t) => (
+                <div key={t.id} className="cal-chip" style={{ borderLeftColor: t.overdue ? 'var(--danger)' : t.status === 'DONE' ? 'var(--accent)' : 'var(--info)' }}>{t.title}</div>
+              ))}
+              {items.length > 3 && <div className="xs muted">+{items.length - 3}</div>}
             </div>
+          );
+        })}
+      </div>
+      <Sheet open={!!day} onClose={() => setDay(null)} title={day ? day.split('-').reverse().join('.') : ''}>
+        {dayTasks.length === 0 ? (
+          <Empty icon="📅" title="Bu kunga vazifa yo'q" />
+        ) : (
+          <div className="stack" style={{ gap: 8 }}>
+            {dayTasks.map((t) => (
+              <TaskRow key={t.id} t={t} showAssignee />
+            ))}
           </div>
         )}
-      </div>
-
-      <div className="grid grid-2" style={{ gap: 10 }}>
-        <Meta label="Ijrochi" value={t.assignee.name} />
-        <Meta label="Tekshiruvchi" value={t.reviewer?.name ?? '—'} />
-        <Meta label="Loyiha" value={t.project ?? '—'} />
-        <Meta label="Bo‘lim" value={t.department ?? '—'} />
-        <Meta label="Deadline" value={`${when(t.deadline, tz)}${moved ? ` (asl: ${dateShort(t.originalDeadline, tz)})` : ''}`} />
-        <Meta label="Ball" value={String(t.points)} />
-      </div>
-
-      {t.description && <div className="card" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, fontSize: 14 }}>{t.description}</div>}
-
-      {t.actions.length > 0 && (
-        <div className="stack" style={{ gap: 8 }}>
-          {commentFor ? (
-            <>
-              <Field label={commentFor === 'RETURN' ? 'Nima tuzatilsin?' : 'Nima to‘sqinlik qilyapti?'}>
-                <textarea className="input" autoFocus value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} />
-              </Field>
-              <div className="row">
-                <button className="btn grow" onClick={() => setCommentFor(null)}>Bekor</button>
-                <button className="btn primary grow" disabled={!comment.trim() || act.isPending} onClick={() => act.mutate({ action: commentFor, comment })}>
-                  {ACTION[commentFor]?.label}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="row wrap" style={{ gap: 8 }}>
-              {t.actions.map((a) => (
-                <button
-                  key={a}
-                  className={`btn grow ${ACTION[a]?.tone === 'primary' ? 'primary' : ''} ${ACTION[a]?.tone === 'danger' ? 'danger' : ''}`}
-                  disabled={act.isPending}
-                  onClick={() => (a === 'RETURN' || a === 'BLOCK' ? setCommentFor(a) : act.mutate({ action: a }))}
-                >
-                  {ACTION[a]?.label ?? a}
-                </button>
-              ))}
-            </div>
-          )}
-          {t.actions.includes('SUBMIT') && (
-            <div className="xs muted">📎 Natija faylini Telegram guruhidagi vazifa xabariga javob (reply) qilib yuboring — u avtomatik biriktiriladi.</div>
-          )}
-        </div>
-      )}
-
-      {t.canEdit && !closed && (
-        editDeadline ? (
-          <DeadlineEditor task={t} onDone={() => setEditDeadline(false)} />
-        ) : (
-          <button className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setEditDeadline(true)}>
-            <Icon name="clock" size={16} /> Deadline’ni o‘zgartirish
-          </button>
-        )
-      )}
-
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="section-title">Fayllar</div>
-        {t.files.length === 0 ? (
-          <div className="small muted">Hali fayl yo‘q.</div>
-        ) : (
-          t.files.map((f) => (
-            <div key={f.id} className="card tight row small">
-              <Icon name="file" size={18} />
-              <span className="grow ellipsis">{f.fileName ?? f.kind}</span>
-              <span className="faint">R{f.revision}</span>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="stack" style={{ gap: 10 }}>
-        <div className="section-title">Tarix</div>
-        <div className="timeline">
-          {t.events.map((e) => (
-            <div key={e.id} className="ev small">
-              <div>
-                <b>{e.actorName ?? 'Tizim'}</b> <span className="muted">{eventText(e)}</span>
-              </div>
-              {e.comment && <div style={{ marginTop: 3 }}>💬 {e.comment}</div>}
-              <div className="xs faint">{when(e.createdAt, tz)}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function eventText(e: TaskDetail['events'][number]) {
-  switch (e.action) {
-    case 'CREATE':
-      return 'vazifani yaratdi';
-    case 'DEADLINE_CHANGE':
-      return 'deadline’ni o‘zgartirdi';
-    case 'EDIT':
-      return 'tahrirladi';
-    case 'FILE':
-      return 'fayl biriktirdi';
-    default:
-      return `${ACTION[e.action]?.label.toLowerCase() ?? e.action} → ${STATUS[e.toStatus ?? ''] ?? ''}`;
-  }
-}
-
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="card tight">
-      <div className="xs muted">{label}</div>
-      <div className="b small ellipsis" style={{ marginTop: 2 }}>{value}</div>
-    </div>
-  );
-}
-
-// ------------------------------------------------------------------------------------------
-
-function toLocalInput(d: Date, tz: string) {
-  const p = localParts(d, tz);
-  const z = (n: number) => String(n).padStart(2, '0');
-  return `${p.year}-${z(p.month)}-${z(p.day)}T${z(p.hour)}:${z(p.minute)}`;
-}
-function fromLocalInput(v: string, tz: string): Date {
-  const [date, hm] = v.split('T');
-  const [y, m, d] = date!.split('-').map(Number) as [number, number, number];
-  const [h, mi] = (hm ?? '18:00').split(':').map(Number) as [number, number];
-  return zonedTime(y, m, d, h, mi, tz);
-}
-
-function DeadlineEditor({ task, onDone }: { task: TaskDetail; onDone: () => void }) {
-  const { session, fail, toast } = useApp();
-  const tz = session.ctx.company.timezone;
-  const qc = useQueryClient();
-  const [value, setValue] = useState(toLocalInput(new Date(task.deadline), tz));
-  const [reason, setReason] = useState('');
-  const save = useMutation({
-    mutationFn: () => api(`/tasks/${task.id}`, { method: 'PATCH', body: { deadline: fromLocalInput(value, tz).toISOString(), reason } }),
-    onSuccess: () => {
-      toast('Deadline yangilandi');
-      void qc.invalidateQueries({ queryKey: ['task', task.id] });
-      void qc.invalidateQueries({ queryKey: ['tasks'] });
-      onDone();
-    },
-    onError: fail,
-  });
-  return (
-    <div className="card stack">
-      <Field label="Yangi deadline">
-        <input className="input" type="datetime-local" value={value} onChange={(e) => setValue(e.target.value)} />
-      </Field>
-      <Field label="Sabab" hint="Motivatsiya asl deadline bo‘yicha hisoblanadi.">
-        <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Masalan: mijoz materialni kech berdi" />
-      </Field>
-      <div className="row">
-        <button className="btn grow" onClick={onDone}>Bekor</button>
-        <button className="btn primary grow" disabled={!reason.trim() || save.isPending} onClick={() => save.mutate()}>Saqlash</button>
-      </div>
-    </div>
-  );
-}
-
-function defaultDeadline(tz: string) {
-  const now = new Date();
-  const p = localParts(new Date(now.getTime() + 86_400_000), tz);
-  return zonedTime(p.year, p.month, p.day, 18, 0, tz);
-}
-
-export function TaskForm({ onDone, projectId, assigneeUserId }: { onDone: () => void; projectId?: string; assigneeUserId?: string }) {
-  const { session, fail, toast, can } = useApp();
-  const tz = session.ctx.company.timezone;
-  const qc = useQueryClient();
-  const members = useMembers();
-  const projects = useProjects();
-  const onlySelf = !can('task.manage', 'COMPANY') && !can('task.manage', 'DEPARTMENT') && !can('task.manage', 'PROJECT');
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    projectId: projectId ?? '',
-    assigneeUserId: onlySelf ? session.user.id : (assigneeUserId ?? ''),
-    isPrivate: false,
-    deadline: toLocalInput(defaultDeadline(tz), tz),
-    priority: 'MEDIUM',
-    points: 1,
-  });
-  const set = (k: keyof typeof form, v: string | number | boolean) => setForm((f) => ({ ...f, [k]: v }));
-  const create = useMutation({
-    mutationFn: () =>
-      api<{ id: string }>('/tasks', {
-        method: 'POST',
-        body: {
-          title: form.title,
-          description: form.description || undefined,
-          projectId: form.projectId || null,
-          assigneeUserId: form.assigneeUserId,
-          deadline: fromLocalInput(form.deadline, tz).toISOString(),
-          priority: form.priority,
-          points: Number(form.points),
-          isPrivate: form.isPrivate,
-        },
-      }),
-    onSuccess: (t) => {
-      toast('Vazifa yaratildi');
-      void qc.invalidateQueries({ queryKey: ['tasks'] });
-      void qc.invalidateQueries({ queryKey: ['projects'] });
-      onDone();
-      go('tasks', t.id);
-    },
-    onError: fail,
-  });
-  const active = (members.data ?? []).filter((m) => m.status === 'ACTIVE');
-  const project = projects.data?.find((p) => p.id === form.projectId);
-  const candidates = project ? active.filter((m) => project.memberUserIds.includes(m.userId)) : active;
-
-  return (
-    <div className="stack">
-      <Field label="Nima qilish kerak?">
-        <input className="input" autoFocus value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Masalan: Oktabr aksiyasi uchun banner" maxLength={200} />
-      </Field>
-      <Field label="Loyiha">
-        <select className="input" value={form.projectId} onChange={(e) => set('projectId', e.target.value)}>
-          <option value="">— Loyihasiz —</option>
-          {(projects.data ?? []).filter((p) => p.status === 'ACTIVE').map((p) => (
-            <option key={p.id} value={p.id}>{p.name}{p.telegramChatId ? ' · 💬' : ''}</option>
-          ))}
-        </select>
-      </Field>
-      {!onlySelf && (
-        <Field label="Ijrochi">
-          <select className="input" value={form.assigneeUserId} onChange={(e) => set('assigneeUserId', e.target.value)}>
-            <option value="">— Tanlang —</option>
-            {candidates.map((m) => (
-              <option key={m.userId} value={m.userId}>{m.name}{m.department ? ` · ${m.department}` : ''}</option>
-            ))}
-          </select>
-        </Field>
-      )}
-      <div className="grid grid-2">
-        <Field label="Deadline">
-          <input className="input" type="datetime-local" value={form.deadline} onChange={(e) => set('deadline', e.target.value)} />
-        </Field>
-        <Field label="Muhimlik">
-          <select className="input" value={form.priority} onChange={(e) => set('priority', e.target.value)}>
-            <option value="HIGH">🔴 Yuqori</option>
-            <option value="MEDIUM">🟡 O‘rta</option>
-            <option value="LOW">🟢 Past</option>
-          </select>
-        </Field>
-      </div>
-      <Field label="Izoh (ixtiyoriy)">
-        <textarea className="input" value={form.description} onChange={(e) => set('description', e.target.value)} maxLength={4000} placeholder="Texnik topshiriq, havolalar, o‘lchamlar…" />
-      </Field>
-      <Field label="Ball (hajm)" hint="Oylik reja va KPI “hajm” ko‘rsatkichi uchun. Oddiy vazifa — 1.">
-        <input className="input" type="number" min={1} max={20} value={form.points} onChange={(e) => set('points', Number(e.target.value))} />
-      </Field>
-      <label className="row small" style={{ gap: 10, cursor: 'pointer' }}>
-        <input type="checkbox" checked={form.isPrivate} onChange={(e) => set('isPrivate', e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--accent)' }} />
-        <span>
-          <b>1:1 (maxfiy)</b> <span className="muted">— faqat siz, ijrochi va CEO ko'radi; guruhga chiqmaydi</span>
-        </span>
-      </label>
-      {project && !project.telegramChatId && <div className="xs muted">💡 Loyihaga Telegram guruh ulansa, vazifa guruhga tugmalari bilan tushadi.</div>}
-      <button className="btn primary block" disabled={form.title.trim().length < 2 || !form.assigneeUserId || create.isPending} onClick={() => create.mutate()}>
-        {create.isPending ? 'Yaratilmoqda…' : 'Vazifani berish'}
-      </button>
+      </Sheet>
     </div>
   );
 }

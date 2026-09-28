@@ -93,11 +93,26 @@ export interface TaskListItem {
   assignee: { id: string; name: string; photoUrl: string | null };
   overdue: boolean;
   isPrivate: boolean;
+  columnId: string | null;
+  format: string | null;
+  platform: string | null;
+  links: string[];
+  checklistDone: number;
+  checklistTotal: number;
+  comments: number;
+  points: number;
   actions: string[];
 }
-export interface TaskDetail extends Omit<TaskListItem, 'assignee' | 'project'> {
+export interface BoardColumn {
+  id: string;
+  board: string;
+  name: string;
+  status: string;
+  position: number;
+  color: string;
+}
+export interface TaskDetail extends Omit<TaskListItem, 'assignee' | 'project' | 'comments'> {
   description: string | null;
-  points: number;
   originalDeadline: string;
   createdAt: string;
   completedAt: string | null;
@@ -108,6 +123,8 @@ export interface TaskDetail extends Omit<TaskListItem, 'assignee' | 'project'> {
   files: Array<{ id: string; revision: number; fileName: string | null; kind: string; createdAt: string }>;
   events: Array<{ id: string; action: string; fromStatus: string | null; toStatus: string | null; comment: string | null; createdAt: string; actorName: string | null }>;
   canEdit: boolean;
+  comments: Array<{ id: string; body: string; createdAt: string; userId: string; name: string; photoUrl: string | null }>;
+  checklist: Array<{ id: string; text: string; done: boolean; position: number }>;
 }
 export interface Motivation {
   score: number | null;

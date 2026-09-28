@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import {
-  DEFAULT_REMINDER_POLICY,
+  normalizePolicy,
   DomainError,
   ROLES,
   type Actor,
@@ -70,7 +70,7 @@ export function scheduleOf(c: Company): WorkSchedule {
 }
 
 export function reminderPolicyOf(c: Company): ReminderPolicy {
-  return { ...DEFAULT_REMINDER_POLICY, ...(c.reminderPolicy as Partial<ReminderPolicy>) };
+  return normalizePolicy(c.reminderPolicy);
 }
 
 export function notFound(what = 'Obyekt'): DomainError {

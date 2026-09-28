@@ -10,6 +10,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  serial,
   text,
   timestamp,
   uniqueIndex,
@@ -196,6 +197,8 @@ export const taskEvents = pgTable(
     comment: text('comment'),
     data: jsonb('data').$type<Record<string, unknown>>(),
     createdAt: createdAt(),
+    /** Insertion order — events in the same millisecond still sort correctly. */
+    seq: serial('seq').notNull(),
   },
   (t) => [index('task_events_task_idx').on(t.taskId)],
 );

@@ -140,7 +140,7 @@ export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<
         updatedAt: ctx.now(),
       })
       .returning();
-    await tx.insert(taskEvents).values({ taskId: t!.id, actorUserId: actor.userId, action: 'CREATE', toStatus: 'NEW' });
+    await tx.insert(taskEvents).values({ createdAt: ctx.now(), taskId: t!.id, actorUserId: actor.userId, action: 'CREATE', toStatus: 'NEW' });
     return t!;
   });
 
@@ -192,7 +192,7 @@ export async function actOnTask(ctx: Ctx, actor: ResolvedActor, taskId: string, 
       })
       .where(eq(tasks.id, taskId))
       .returning();
-    await tx.insert(taskEvents).values({ taskId, actorUserId: actor.userId, action, fromStatus: t!.status, toStatus: result.status, comment: comment?.trim() || null });
+    await tx.insert(taskEvents).values({ createdAt: ctx.now(), taskId, actorUserId: actor.userId, action, fromStatus: t!.status, toStatus: result.status, comment: comment?.trim() || null });
     return u!;
   });
 
@@ -241,6 +241,7 @@ export async function updateTask(ctx: Ctx, actor: ResolvedActor, taskId: string,
   const { reason, ...fields } = data;
   const [u] = await ctx.db.update(tasks).set({ ...fields, updatedAt: ctx.now() }).where(eq(tasks.id, taskId)).returning();
   await ctx.db.insert(taskEvents).values({
+    createdAt: ctx.now(),
     taskId,
     actorUserId: actor.userId,
     action: data.deadline ? 'DEADLINE_CHANGE' : 'EDIT',
@@ -262,7 +263,7 @@ export async function addTaskFile(ctx: Ctx, actor: ResolvedActor, taskId: string
   if (t.assigneeUserId !== actor.userId && !managesBeyondOwn(actor, t)) throw new DomainError('FORBIDDEN', 'Faqat ijrochi fayl yuklaydi');
   const data = addFileInput.parse(input);
   const [f] = await ctx.db.insert(taskFiles).values({ taskId, revision: t.revision, uploadedBy: actor.userId, ...data }).returning();
-  await ctx.db.insert(taskEvents).values({ taskId, actorUserId: actor.userId, action: 'FILE', data: { fileName: data.fileName, revision: t.revision } });
+  await ctx.db.insert(taskEvents).values({ createdAt: ctx.now(), taskId, actorUserId: actor.userId, action: 'FILE', data: { fileName: data.fileName, revision: t.revision } });
   return f!;
 }
 
@@ -332,7 +333,7 @@ export async function getTask(ctx: Ctx, actor: ResolvedActor, taskId: string) {
     .from(taskEvents)
     .leftJoin(users, eq(users.id, taskEvents.actorUserId))
     .where(eq(taskEvents.taskId, taskId))
-    .orderBy(desc(taskEvents.createdAt));
+    .orderBy(desc(taskEvents.createdAt), desc(taskEvents.seq));
   const files = await ctx.db.select().from(taskFiles).where(eq(taskFiles.taskId, taskId)).orderBy(desc(taskFiles.createdAt));
   const [dep] = t.departmentId ? await ctx.db.select().from(departments).where(eq(departments.id, t.departmentId)) : [];
   const card = await taskCard(ctx.db, taskId);
