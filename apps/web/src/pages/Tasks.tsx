@@ -336,7 +336,7 @@ function defaultDeadline(tz: string) {
   return zonedTime(p.year, p.month, p.day, 18, 0, tz);
 }
 
-export function TaskForm({ onDone, projectId }: { onDone: () => void; projectId?: string }) {
+export function TaskForm({ onDone, projectId, assigneeUserId }: { onDone: () => void; projectId?: string; assigneeUserId?: string }) {
   const { session, fail, toast, can } = useApp();
   const tz = session.ctx.company.timezone;
   const qc = useQueryClient();
@@ -347,12 +347,13 @@ export function TaskForm({ onDone, projectId }: { onDone: () => void; projectId?
     title: '',
     description: '',
     projectId: projectId ?? '',
-    assigneeUserId: onlySelf ? session.user.id : '',
+    assigneeUserId: onlySelf ? session.user.id : (assigneeUserId ?? ''),
+    isPrivate: false,
     deadline: toLocalInput(defaultDeadline(tz), tz),
     priority: 'MEDIUM',
     points: 1,
   });
-  const set = (k: keyof typeof form, v: string | number) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: keyof typeof form, v: string | number | boolean) => setForm((f) => ({ ...f, [k]: v }));
   const create = useMutation({
     mutationFn: () =>
       api<{ id: string }>('/tasks', {
@@ -365,6 +366,7 @@ export function TaskForm({ onDone, projectId }: { onDone: () => void; projectId?
           deadline: fromLocalInput(form.deadline, tz).toISOString(),
           priority: form.priority,
           points: Number(form.points),
+          isPrivate: form.isPrivate,
         },
       }),
     onSuccess: (t) => {
@@ -421,6 +423,12 @@ export function TaskForm({ onDone, projectId }: { onDone: () => void; projectId?
       <Field label="Ball (hajm)" hint="Oylik reja va KPI “hajm” ko‘rsatkichi uchun. Oddiy vazifa — 1.">
         <input className="input" type="number" min={1} max={20} value={form.points} onChange={(e) => set('points', Number(e.target.value))} />
       </Field>
+      <label className="row small" style={{ gap: 10, cursor: 'pointer' }}>
+        <input type="checkbox" checked={form.isPrivate} onChange={(e) => set('isPrivate', e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--accent)' }} />
+        <span>
+          <b>1:1 (maxfiy)</b> <span className="muted">— faqat siz, ijrochi va CEO ko'radi; guruhga chiqmaydi</span>
+        </span>
+      </label>
       {project && !project.telegramChatId && <div className="xs muted">💡 Loyihaga Telegram guruh ulansa, vazifa guruhga tugmalari bilan tushadi.</div>}
       <button className="btn primary block" disabled={form.title.trim().length < 2 || !form.assigneeUserId || create.isPending} onClick={() => create.mutate()}>
         {create.isPending ? 'Yaratilmoqda…' : 'Vazifani berish'}

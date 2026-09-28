@@ -1,15 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { api, ApiError } from '../lib/api';
-import { dateShort, money, ROLE } from '../lib/format';
+import { api } from '../lib/api';
+import { dateShort, ROLE } from '../lib/format';
 import { useDepartments, useMembers } from '../lib/queries';
-import type { Invitation, Member, Scores } from '../lib/types';
+import type { Invitation, Member } from '../lib/types';
 import { shareLink } from '../lib/tg';
 import { Avatar, Empty, Field, Icon, Sheet, Skeleton } from '../ui/kit';
-import { ScoresView } from '../ui/Scores';
+import { MemberProfile } from './MemberProfile';
 import { go, useApp } from '../ui/state';
 
-const RANK: Record<string, number> = { OWNER: 100, ADMIN: 90, HR: 70, FINANCE: 70, PM: 50, DEPT_HEAD: 50, EMPLOYEE: 10 };
+const RANK: Record<string, number> = { OWNER: 100, ADMIN: 90, HR: 70, FINANCE: 70, MARKETER: 50, PM: 50, DEPT_HEAD: 50, EMPLOYEE: 10 };
 
 /** Roles the current user may hand out (mirrors the server rule; the server decides). */
 export function grantableRoles(myRoles: string[]): string[] {
@@ -20,7 +20,7 @@ export function grantableRoles(myRoles: string[]): string[] {
 }
 
 export function Team({ openId }: { openId?: string }) {
-  const { can } = useApp();
+  const { can, session } = useApp();
   const members = useMembers();
   const deps = useDepartments();
   const [dep, setDep] = useState<string>('all');
@@ -35,10 +35,16 @@ export function Team({ openId }: { openId?: string }) {
       .sort((a, b) => Number(a.status !== 'ACTIVE') - Number(b.status !== 'ACTIVE'));
   }, [members.data, dep, q]);
 
+  if (openId) return <MemberProfile key={openId} userId={openId} />;
+
   return (
     <div className="stack" style={{ gap: 14 }}>
       <div className="row between">
         <h1 className="page-title">Jamoa</h1>
+        <span className="grow" />
+        <button className="btn sm" onClick={() => go('team', session.user.id)}>
+          <Avatar name={session.user.firstName} src={session.user.photoUrl} size={22} /> Mening profilim
+        </button>
         {can('employee.manage') && (
           <button className="btn primary sm" onClick={() => setInviting(true)}>
             <Icon name="plus" size={16} /> Taklif qilish
@@ -77,9 +83,6 @@ export function Team({ openId }: { openId?: string }) {
           ))}
         </div>
       )}
-      <Sheet open={!!openId} onClose={() => go('team')} wide title="Hodim">
-        {openId && <MemberView id={openId} />}
-      </Sheet>
       <Sheet open={inviting} onClose={() => setInviting(false)} title="Jamoaga taklif">
         {inviting && <InviteForm />}
       </Sheet>
@@ -87,59 +90,7 @@ export function Team({ openId }: { openId?: string }) {
   );
 }
 
-function MemberView({ id }: { id: string }) {
-  const { session, can, fail, toast } = useApp();
-  const qc = useQueryClient();
-  const members = useMembers();
-  const deps = useDepartments();
-  const m = members.data?.find((x) => x.userId === id);
-  const scores = useQuery({
-    queryKey: ['scores', id],
-    queryFn: () => api<Scores>(`/members/${id}/scores`),
-    retry: (n, e) => !(e instanceof ApiError && e.status === 403) && n < 1,
-  });
-  const [edit, setEdit] = useState(false);
-  const isSelf = id === session.user.id;
-  const manageable = !isSelf && (can('employee.manage', 'COMPANY') || (can('employee.manage', 'DEPARTMENT') && !!m?.departmentId && session.ctx.headOfDepartmentIds.includes(m.departmentId)));
-
-
-  if (!m) return <Skeleton h={80} n={3} />;
-  return (
-    <div className="stack" style={{ gap: 14 }}>
-      <div className="row" style={{ gap: 14 }}>
-        <Avatar name={m.name} src={m.photoUrl} size={56} />
-        <div className="grow">
-          <div className="xb" style={{ fontSize: 19 }}>{m.name}</div>
-          <div className="small muted">{[m.position, m.department].filter(Boolean).join(' · ') || '—'}</div>
-          <div className="xs" style={{ color: 'var(--accent-ink)', marginTop: 2 }}>{m.roles.map((r) => ROLE[r] ?? r).join(', ')}{m.status !== 'ACTIVE' ? ' · o‘chirilgan' : ''}</div>
-        </div>
-        {m.username && (
-          <a className="btn icon-btn" href={`https://t.me/${m.username}`} aria-label="Telegram">
-            <Icon name="chat" />
-          </a>
-        )}
-      </div>
-
-      <div className="grid grid-2">
-        {m.phone && <div className="card tight"><div className="xs muted">Telefon</div><div className="b small">{m.phone}</div></div>}
-        {m.salary !== undefined && <div className="card tight"><div className="xs muted">Oylik</div><div className="b small">{money(m.salary)}</div></div>}
-        <div className="card tight"><div className="xs muted">Qo‘shilgan</div><div className="b small">{dateShort(m.joinedAt)}</div></div>
-      </div>
-
-      {scores.data && <ScoresView s={scores.data} />}
-
-      {manageable || (can('salary.manage') && !isSelf) ? (
-        edit ? (
-          <MemberEdit m={m} deps={deps.data ?? []} onDone={() => setEdit(false)} />
-        ) : (
-          <button className="btn" onClick={() => setEdit(true)}>Tahrirlash</button>
-        )
-      ) : null}
-    </div>
-  );
-}
-
-function MemberEdit({ m, deps, onDone }: { m: Member; deps: Array<{ id: string; name: string }>; onDone: () => void }) {
+export function MemberEdit({ m, deps, onDone }: { m: Member; deps: Array<{ id: string; name: string }>; onDone: () => void }) {
   const { session, can, fail, toast } = useApp();
   const qc = useQueryClient();
   const hrEdit = can('employee.manage');

@@ -86,6 +86,7 @@ export const ROLE: Record<string, string> = {
   ADMIN: 'Administrator',
   HR: 'HR',
   FINANCE: 'Moliya',
+  MARKETER: 'Marketolog',
   PM: 'Loyiha menejeri',
   DEPT_HEAD: "Bo'lim boshlig'i",
   EMPLOYEE: 'Hodim',

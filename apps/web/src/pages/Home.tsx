@@ -1,14 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { AttendanceCard } from '../ui/Attendance';
 import { api } from '../lib/api';
-import { leftText, STAGE, time, todayLong } from '../lib/format';
-import type { Dashboard, TaskListItem, Today } from '../lib/types';
-import { getLocation } from '../lib/tg';
+import { leftText, STAGE, todayLong } from '../lib/format';
+import type { Dashboard, TaskListItem } from '../lib/types';
 import { Avatar, Bar, Empty, Icon, Ring, scoreTone, Skeleton } from '../ui/kit';
 import { go, useApp } from '../ui/state';
 import { TaskRow } from '../ui/TaskRow';
 
 export function Home() {
-  const { session, isManager, theme, setTheme, switchCompany } = useApp();
+  const { session, theme, setTheme, switchCompany } = useApp();
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: () => api<Dashboard>('/dashboard') });
   const mine = useQuery({ queryKey: ['tasks', { mine: true }], queryFn: () => api<TaskListItem[]>('/tasks', { query: { mine: true } }) });
   const u = session.user;
@@ -120,8 +120,10 @@ export function Home() {
           )}
         </div>
 
-        {isManager && dash.data && dash.data.team.length > 1 && <TeamPanel d={dash.data} />}
+        {dash.data && dash.data.team.length > 1 && <TeamPanel d={dash.data} />}
       </div>
+
+      {dash.data && <MotivationPanel d={dash.data} />}
     </div>
   );
 }
@@ -200,47 +202,72 @@ function Stat({ v, l, danger }: { v: string | number; l: string; danger?: boolea
   );
 }
 
-function AttendanceCard() {
-  const { fail, toast } = useApp();
-  const qc = useQueryClient();
-  const today = useQuery({ queryKey: ['today'], queryFn: () => api<Today>('/attendance/today') });
-  const mark = useMutation({
-    mutationFn: async (kind: 'check-in' | 'check-out') => {
-      const loc = today.data?.needsLocation ? await getLocation() : null;
-      if (today.data?.needsLocation && !loc) throw new Error('Joylashuvga ruxsat bering');
-      return api(`/attendance/${kind}`, { method: 'POST', body: loc ?? {} });
-    },
-    onSuccess: (_d, kind) => {
-      toast(kind === 'check-in' ? 'Xush kelibsiz! Ish kuni boshlandi' : 'Rahmat! Yaxshi dam oling');
-      void qc.invalidateQueries({ queryKey: ['today'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard'] });
-    },
-    onError: (e) => (e instanceof Error && !('status' in e) ? toast(e.message, 'error') : fail(e)),
-  });
-  const d = today.data;
-  if (!d) return <Skeleton h={68} n={1} />;
-  const inside = d.checkIn && !d.checkOut;
+const STAGES: Array<[string, number, number]> = [
+  ['Past', 0, 30],
+  ['Xavf', 30, 50],
+  ['Nazorat', 50, 70],
+  ['Yaxshi', 70, 85],
+  ["A'lo", 85, 101],
+];
+const STAGE_NOTE: Record<string, string> = {
+  Past: 'Jiddiy muammo — zudlik bilan aralashish kerak',
+  Xavf: 'Kechikishlar ko‘p — rahbar nazorati kerak',
+  Nazorat: 'Jarayon nazoratda',
+  Yaxshi: 'Jamoa deadline’larni yaxshi ushlayapti',
+  "A'lo": 'A’lo intizom',
+};
+
+/** Company-wide deadline discipline — the big panel at the bottom of the dashboard (variant A). */
+function MotivationPanel({ d }: { d: Dashboard }) {
+  const v = d.totals.avgMotivation;
+  const stage = v == null ? null : STAGES.find(([, a, b]) => v >= a && v < b)![0];
+  const on = d.team.reduce((s, t) => s + t.motivation.onTime, 0);
+  const all = d.team.reduce((s, t) => s + t.motivation.onTime + t.motivation.doneLate + t.motivation.openOverdue, 0);
+  const lateN = d.team.reduce((s, t) => s + t.motivation.doneLate + t.motivation.openOverdue, 0);
+  const lateH = lateN ? d.team.reduce((s, t) => s + t.motivation.averageLateHours * (t.motivation.doneLate + t.motivation.openOverdue), 0) / lateN : 0;
+  const color = v == null ? 'var(--muted)' : v >= 70 ? 'var(--accent-ink)' : v >= 50 ? 'var(--warn)' : 'var(--danger)';
   return (
-    <div className="card row" style={{ gap: 12, padding: '14px 16px' }}>
-      <span className={inside ? 'dot-live' : 'dot-off'} />
-      <div className="grow">
-        <div className="b" style={{ fontSize: 15 }}>
-          {!d.checkIn ? 'Hali kelmadingiz' : inside ? `Ishdasiz · ${time(d.checkIn)} dan` : `Kun yakunlandi · ${time(d.checkIn)}–${time(d.checkOut!)}`}
+    <div className="card stack" style={{ gap: 18, padding: '20px 22px' }}>
+      <div className="row wrap" style={{ alignItems: 'flex-start', gap: 12 }}>
+        <div className="grow" style={{ minWidth: 220 }}>
+          <div className="xb" style={{ fontSize: 20 }}>Motivatsion ko'rsatkich</div>
+          <div className="small muted" style={{ marginTop: 3 }}>Deadline bajarilishi, kechikkan vazifalar va kechikish soatlariga qarab · oxirgi 30 kun</div>
         </div>
-        <div className="small" style={{ color: d.lateMinutes > 0 ? 'var(--warn)' : 'var(--accent-ink)' }}>
-          {d.checkIn ? (d.lateMinutes > 0 ? `${d.lateMinutes} daqiqa kechikish` : "O'z vaqtida") : d.needsLocation ? 'Ofis hududida belgilanadi' : 'Bir bosishda belgilang'}
+        <div style={{ textAlign: 'right' }}>
+          <div className="xb" style={{ fontSize: 48, lineHeight: 1, color }}>{v == null ? '—' : `${v}%`}</div>
+          {stage && <div className="small b" style={{ color, marginTop: 4 }}>{stage} · {STAGE_NOTE[stage]}</div>}
         </div>
       </div>
-      {!d.checkIn && (
-        <button className="btn primary sm" disabled={mark.isPending} onClick={() => mark.mutate('check-in')}>
-          <Icon name="pin" size={16} /> Keldim
-        </button>
-      )}
-      {inside && (
-        <button className="btn sm" disabled={mark.isPending} onClick={() => mark.mutate('check-out')}>
-          Ketdim
-        </button>
-      )}
+      <div style={{ position: 'relative', height: 30, marginTop: 8 }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 4, height: 20, borderRadius: 10, background: 'linear-gradient(90deg, #F43F5E 0%, #FB923C 30%, #F59E0B 50%, #A3E635 70%, #34D399 85%, #14B8A6 100%)' }} />
+        {v != null && (
+          <div style={{ position: 'absolute', left: `calc(${Math.min(99, Math.max(1, v))}% - 4px)`, top: -3, width: 8, height: 34, borderRadius: 4, background: 'var(--text)', boxShadow: '0 0 0 3px var(--surface-solid)' }} />
+        )}
+      </div>
+      <div style={{ position: 'relative', height: 30 }}>
+        {STAGES.map(([n, a, b]) => (
+          <div key={n} className="xs" style={{ position: 'absolute', left: `${a}%`, width: `${Math.min(100, b) - a}%`, fontWeight: n === stage ? 800 : 600, color: n === stage ? 'var(--text)' : 'var(--faint)' }}>
+            {n}
+            <div style={{ fontWeight: 500 }}>{a}–{Math.min(100, b)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-2 desk-4" style={{ gap: 10 }}>
+        <Driver label="Muddatida bajarilgan" value={all ? `${Math.round((100 * on) / all)}%` : '—'} tone="ok" />
+        <Driver label="Kechikkan vazifalar" value={`${d.totals.overdue} ta`} tone={d.totals.overdue ? 'bad' : 'ok'} />
+        <Driver label="O'rtacha kechikish" value={lateN ? `${lateH.toFixed(1)} ish soati` : '—'} tone={lateH > 4 ? 'warn' : 'ok'} />
+        <Driver label="Xavf ostidagi hodimlar" value={`${d.totals.atRisk} kishi`} tone={d.totals.atRisk ? 'bad' : 'ok'} />
+      </div>
+    </div>
+  );
+}
+
+function Driver({ label, value, tone }: { label: string; value: string; tone: 'ok' | 'warn' | 'bad' }) {
+  const c = tone === 'ok' ? 'var(--accent-ink)' : tone === 'warn' ? 'var(--warn)' : 'var(--danger)';
+  return (
+    <div style={{ borderRadius: 14, padding: '10px 14px', background: 'var(--surface-2)', border: '1px solid var(--line)' }}>
+      <div className="xs muted">{label}</div>
+      <div className="xb" style={{ fontSize: 18, color: c }}>{value}</div>
     </div>
   );
 }

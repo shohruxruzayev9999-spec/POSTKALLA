@@ -6,7 +6,8 @@ import { tg } from './lib/tg';
 import { Home } from './pages/Home';
 import { Onboarding } from './pages/Onboarding';
 import { InviteAccept } from './pages/InviteAccept';
-import { Profile } from './pages/Profile';
+import { Attendance } from './pages/Attendance';
+import { MemberProfile } from './pages/MemberProfile';
 import { Projects } from './pages/Projects';
 import { Settings } from './pages/Settings';
 import { Tasks } from './pages/Tasks';
@@ -127,7 +128,7 @@ const NAV = [
   { name: 'tasks', label: 'Vazifalar', icon: 'tasks' },
   { name: 'projects', label: 'Loyihalar', icon: 'folder' },
   { name: 'team', label: 'Jamoa', icon: 'team' },
-  { name: 'profile', label: 'Profil', icon: 'user' },
+  { name: 'attendance', label: 'Davomat', icon: 'clock' },
 ];
 
 function Shell() {
@@ -143,7 +144,9 @@ function Shell() {
       case 'team':
         return <Team openId={route.id} />;
       case 'profile':
-        return <Profile />;
+        return <MemberProfile userId={session.user.id} />;
+      case 'attendance':
+        return <Attendance />;
       case 'settings':
         return <Settings />;
       default:

@@ -92,6 +92,7 @@ export interface TaskListItem {
   reviewerUserId: string | null;
   assignee: { id: string; name: string; photoUrl: string | null };
   overdue: boolean;
+  isPrivate: boolean;
   actions: string[];
 }
 export interface TaskDetail extends Omit<TaskListItem, 'assignee' | 'project'> {
@@ -135,6 +136,9 @@ export interface Dashboard {
 }
 export interface Today {
   day: string;
+  workingDay: boolean;
+  startsAt: string;
+  endsAt: string;
   checkIn: string | null;
   checkOut: string | null;
   lateMinutes: number;
@@ -151,4 +155,21 @@ export interface Invitation {
   uses: number;
   revoked: boolean;
   link: string;
+}
+
+export interface AttendanceDay {
+  date: string;
+  weekday: number;
+  working: boolean;
+  status: 'ON_TIME' | 'LATE' | 'ABSENT' | 'OFF' | 'FUTURE' | 'BEFORE_JOIN';
+  checkIn: string | null;
+  checkOut: string | null;
+  lateMinutes: number;
+  note: string | null;
+}
+export interface AttendanceMonth {
+  month: string;
+  userId: string;
+  days: AttendanceDay[];
+  summary: { workDays: number; onTime: number; late: number; absent: number };
 }

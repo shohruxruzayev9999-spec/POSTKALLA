@@ -9,7 +9,8 @@ Telegram Mini App ERP for marketing agencies (multi-tenant SaaS). Language of UI
 - `deploy/` — docker-compose (Postgres, API, Caddy with auto-HTTPS serving the web build), nightly backups.
 
 ## Rules that must never regress (covered by tests)
-- Roles/salary/attendance/KPI rating: nobody edits their own; nobody grants or touches a rank ≥ their own; ≥1 Owner always.
+- Visibility: everyone sees the work (tasks, projects, team, attendance, KPI); money (finance, others' salaries) only CEO/Finance/HR; private 1:1 tasks only giver, assignee, reviewer, Owner, never posted to groups.
+- Roles/salary/attendance: nobody edits their own; nobody grants or touches a rank ≥ their own; ≥1 Owner always.
 - Tenant isolation: every query filters by `company_id`; actor is loaded from DB per request (never from the token).
 - Nobody approves their own task. Deadline moves need a manager + reason; motivation uses `original_deadline`.
 - Reminders count working hours only; one live reminder per chat (previous is deleted); 3rd → dept head, then CEO.
