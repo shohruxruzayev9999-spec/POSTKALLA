@@ -3,11 +3,11 @@ import type { TaskListItem } from '../lib/types';
 import { Avatar, StatusPill } from './kit';
 import { go } from './state';
 
-export function TaskRow({ t, showAssignee }: { t: TaskListItem; showAssignee?: boolean }) {
+export function TaskRow({ t, showAssignee, openRoute = 'tasks' }: { t: TaskListItem; showAssignee?: boolean; openRoute?: string }) {
   const left = leftText(t.deadline);
   const closed = t.status === 'DONE' || t.status === 'CANCELLED';
   return (
-    <div className="card tight click row" style={{ gap: 12, alignItems: 'stretch' }} onClick={() => go('tasks', t.id)}>
+    <div className="card tight click row" style={{ gap: 12, alignItems: 'stretch' }} onClick={() => go(openRoute, t.id)}>
       <span className={`prio prio-${t.priority}`} />
       <div className="grow stack" style={{ gap: 4 }}>
         <div className="row between" style={{ alignItems: 'flex-start' }}>

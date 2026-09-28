@@ -20,7 +20,7 @@ export function useColumns(board: string) {
 }
 
 /** Kanban board with editable columns. Drag = the same action as a button (server decides). */
-export function Board({ board, tasks, showAssignee = true, departmentId }: { board: string; tasks: TaskListItem[]; showAssignee?: boolean; departmentId?: string }) {
+export function Board({ board, tasks, showAssignee = true, departmentId, openRoute = 'tasks' }: { board: string; tasks: TaskListItem[]; showAssignee?: boolean; departmentId?: string; openRoute?: string }) {
   const { can, fail, toast } = useApp();
   const qc = useQueryClient();
   const cols = useColumns(board);
@@ -103,7 +103,7 @@ export function Board({ board, tasks, showAssignee = true, departmentId }: { boa
               </div>
               <div className="board-col-body">
                 {items.map((t) => (
-                  <BoardCard key={t.id} t={t} showAssignee={showAssignee} onDragStart={(e) => {
+                  <BoardCard key={t.id} t={t} showAssignee={showAssignee} openRoute={openRoute} onDragStart={(e) => {
                     e.dataTransfer.setData('text/task', t.id);
                     setDragId(t.id);
                   }} />
@@ -153,10 +153,10 @@ export function Board({ board, tasks, showAssignee = true, departmentId }: { boa
   );
 }
 
-export function BoardCard({ t, showAssignee, onDragStart }: { t: TaskListItem; showAssignee?: boolean; onDragStart?: (e: DragEvent) => void }) {
+export function BoardCard({ t, showAssignee, onDragStart, openRoute = 'tasks' }: { t: TaskListItem; showAssignee?: boolean; onDragStart?: (e: DragEvent) => void; openRoute?: string }) {
   const closed = t.status === 'DONE' || t.status === 'CANCELLED';
   return (
-    <div className="board-card" draggable={!!onDragStart} onDragStart={onDragStart} onClick={() => go('tasks', t.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && go('tasks', t.id)}>
+    <div className="board-card" draggable={!!onDragStart} onDragStart={onDragStart} onClick={() => go(openRoute, t.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && go(openRoute, t.id)}>
       <div className="row" style={{ gap: 6, alignItems: 'flex-start' }}>
         <span className={`prio prio-${t.priority}`} style={{ height: 16, marginTop: 2 }} />
         <div className="grow b small" style={{ lineHeight: 1.35 }}>

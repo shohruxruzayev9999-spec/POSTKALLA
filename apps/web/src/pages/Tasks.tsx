@@ -162,7 +162,7 @@ export function dayKey(d: Date | string, tz: string) {
   return new Date(d).toLocaleDateString('en-CA', { timeZone: tz });
 }
 
-export function TaskList({ tasks }: { tasks: TaskListItem[] }) {
+export function TaskList({ tasks, openRoute }: { tasks: TaskListItem[]; openRoute?: string }) {
   const { session } = useApp();
   const tz = session.ctx.company.timezone;
   const today = dayKey(new Date(), tz);
@@ -188,7 +188,7 @@ export function TaskList({ tasks }: { tasks: TaskListItem[] }) {
           </div>
           <div className="grid grid-auto" style={{ gap: 8 }}>
             {[...items].sort((a, b) => +new Date(a.deadline) - +new Date(b.deadline)).map((t) => (
-              <TaskRow key={t.id} t={t} showAssignee />
+              <TaskRow key={t.id} t={t} showAssignee openRoute={openRoute} />
             ))}
           </div>
         </div>

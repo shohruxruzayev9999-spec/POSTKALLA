@@ -329,3 +329,29 @@ textarea.input { min-height: 90px; resize: vertical; }
 .more-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .more-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 6px; border-radius: 18px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
 .more-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-ink); }
+
+/* ---------- Dizayn / Media sections */
+.month-pick { gap: 2px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 13px; padding: 2px; }
+.sec-stats { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sec-stats .card.stat { padding: 12px; border-radius: 16px; }
+.sec-stats .stat .l { font-size: 11.5px; line-height: 1.25; }
+@media (max-width: 899px) { .sec-stats .card.sec-ring { padding: 12px 14px; } }
+.sec-stats .sec-ring { grid-column: 1 / -1; gap: 16px; }
+.sec-layout { display: grid; gap: 14px; }
+.sec-person { gap: 10px; width: 100%; padding: 6px; margin: -6px; border-radius: 12px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sec-person:hover { background: var(--surface-2); }
+.sec-mobile-tabs { width: 100%; }
+@media (max-width: 899px) { .m-hide { display: none !important; } }
+@media (min-width: 900px) {
+  .sec-mobile-tabs { display: none; }
+  .sec-stats { grid-template-columns: 1.6fr repeat(6, minmax(0, 1fr)); }
+  .sec-stats .sec-ring { grid-column: auto; }
+  .sec-layout { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
+  .sec-side { position: sticky; top: 16px; }
+}
+@media (min-width: 900px) and (max-width: 1279px) {
+  .sec-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sec-stats .sec-ring { grid-column: span 2; }
+  .sec-layout { grid-template-columns: minmax(0, 1fr); }
+  .sec-side { position: static; display: grid !important; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+}

@@ -11,6 +11,7 @@ import { MemberProfile } from './pages/MemberProfile';
 import { Projects } from './pages/Projects';
 import { Settings } from './pages/Settings';
 import { Shoots } from './pages/Shoots';
+import { Section } from './pages/Section';
 import { Tasks } from './pages/Tasks';
 import { Team } from './pages/Team';
 import { Icon, Ring } from './ui/kit';
@@ -139,6 +140,8 @@ export const NAV: NavItem[] = [
   { name: 'projects', label: 'Loyihalar', icon: 'folder', section: 'main' },
   { name: 'team', label: 'Jamoa', icon: 'team', section: 'main' },
   { name: 'attendance', label: 'Davomat', icon: 'clock', section: 'main' },
+  { name: 'design', label: 'Dizayn', icon: 'palette', section: 'work' },
+  { name: 'media', label: 'Media', icon: 'film', section: 'work' },
   { name: 'shoots', label: 'Syomka', icon: 'camera', section: 'work' },
   { name: 'settings', label: 'Sozlamalar', icon: 'settings', section: 'admin', when: (can) => can('settings.company') || can('settings.department') },
 ];
@@ -163,6 +166,10 @@ function Shell() {
         return <Attendance />;
       case 'shoots':
         return <Shoots />;
+      case 'design':
+        return <Section key="design" section="DESIGN" openId={route.id} />;
+      case 'media':
+        return <Section key="media" section="MEDIA" openId={route.id} />;
       case 'settings':
         return <Settings />;
       case 'more':

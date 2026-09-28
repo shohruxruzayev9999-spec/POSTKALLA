@@ -206,11 +206,12 @@ function DepartmentForm({ dep, onDone }: { dep: Department | null; onDone: () =>
     name: dep?.name ?? '',
     headUserId: dep?.headUserId ?? '',
     requireFileOnSubmit: dep?.requireFileOnSubmit ?? false,
+    section: dep?.section ?? '',
   });
   const company = can('settings.company');
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: form.name, requireFileOnSubmit: form.requireFileOnSubmit, ...(company ? { headUserId: form.headUserId || null } : {}) };
+      const body = { name: form.name, requireFileOnSubmit: form.requireFileOnSubmit, ...(form.section ? { section: form.section } : {}), ...(company ? { headUserId: form.headUserId || null } : {}) };
       return dep ? api(`/departments/${dep.id}`, { method: 'PATCH', body }) : api('/departments', { method: 'POST', body });
     },
     onSuccess: () => {
@@ -236,6 +237,14 @@ function DepartmentForm({ dep, onDone }: { dep: Department | null; onDone: () =>
           </select>
         </Field>
       )}
+      <Field label="Qaysi doskaga tushadi" hint="Dizayn va Media bo‘limlarining vazifalari o‘z sahifasida alohida doskada ko‘rinadi.">
+        <select className="input" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })}>
+          {!dep && <option value="">Nomidan aniqlansin</option>}
+          <option value="DESIGN">Dizayn</option>
+          <option value="MEDIA">Media (video, montaj, syomka)</option>
+          <option value="NONE">Boshqa</option>
+        </select>
+      </Field>
       <label className="row small" style={{ gap: 10, cursor: 'pointer' }}>
         <input type="checkbox" checked={form.requireFileOnSubmit} onChange={(e) => setForm({ ...form, requireFileOnSubmit: e.target.checked })} style={{ width: 18, height: 18, accentColor: 'var(--accent)' }} />
         Tekshiruvga yuborishda natija fayli majburiy

@@ -44,6 +44,7 @@ export interface Department {
   headUserId: string | null;
   requireFileOnSubmit: boolean;
   color: string;
+  section: 'DESIGN' | 'MEDIA' | 'NONE';
   memberCount: number;
 }
 export interface Member {
@@ -102,6 +103,9 @@ export interface TaskListItem {
   comments: number;
   points: number;
   actions: string[];
+  completedAt: string | null;
+  createdAt: string;
+  originalDeadline: string;
 }
 export interface BoardColumn {
   id: string;
