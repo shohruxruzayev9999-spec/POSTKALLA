@@ -1,5 +1,8 @@
 name: Server
 on:
+  # Every push to main is tested, built and shipped (tests gate the deploy).
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
@@ -9,7 +12,7 @@ on:
 
 jobs:
   inspect:
-    if: inputs.action == 'inspect'
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'inspect'
     runs-on: ubuntu-latest
     steps:
       - name: Read-only look at the server
@@ -35,7 +38,7 @@ jobs:
           SH
 
   deploy:
-    if: inputs.action == 'deploy'
+    if: github.event_name == 'push' || inputs.action == 'deploy'
     runs-on: ubuntu-latest
     concurrency: deploy
     env:

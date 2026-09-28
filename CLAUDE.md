@@ -22,7 +22,7 @@ Telegram Mini App ERP for marketing agencies (multi-tenant SaaS). Language of UI
 - New migration: edit `apps/api/src/db/schema.ts`, then `npm run db:generate -w @retarget/api`.
 
 ## Deploy
-Actions → workflow "Server" (manual, input `deploy`) builds web + API image and ships to the AWS VM next to the old ERP (never touch the old `retarget-erp` containers/nginx site). Secrets: `SSH_KEY`, `SSH_HOST`, `SSH_USER`, `BOT_TOKEN`. URL: https://postkalla.3-122-101-164.nip.io
+Every push to `main` runs workflow "Server" (tests → build → ship; also manual with input `deploy`/`inspect`) builds web + API image and ships to the AWS VM next to the old ERP (never touch the old `retarget-erp` containers/nginx site). Secrets: `SSH_KEY`, `SSH_HOST`, `SSH_USER`, `BOT_TOKEN`. URL: https://postkalla.3-122-101-164.nip.io
 
 ## Progress
 - [x] Shared rules + tests
