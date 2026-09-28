@@ -14,6 +14,7 @@ import * as projects from '../services/projects.js';
 import * as tasks from '../services/tasks.js';
 import * as boards from '../services/boards.js';
 import * as shoots from '../services/shoots.js';
+import * as finance from '../services/finance.js';
 
 export interface HttpConfig {
   botToken: string;
@@ -189,6 +190,17 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.post('/api/attendance/check-in', async (req) => att.checkIn(ctx, await actorOf(req), (req.body ?? {}) as never));
   app.post('/api/attendance/check-out', async (req) => att.checkOut(ctx, await actorOf(req), (req.body ?? {}) as never));
   app.get('/api/attendance/month', async (req) => att.attendanceMonth(ctx, await actorOf(req), req.query as never));
+
+  app.get('/api/finance', async (req) => finance.financeMonth(ctx, await actorOf(req), req.query as never));
+  app.get('/api/finance/trend', async (req) => finance.financeTrend(ctx, await actorOf(req), req.query as never));
+  app.post('/api/finance/rows', async (req) => finance.createRow(ctx, await actorOf(req), req.body as never));
+  app.patch('/api/finance/rows/:id', async (req) => finance.updateRow(ctx, await actorOf(req), (req.params as { id: string }).id, req.body as never));
+  app.delete('/api/finance/rows/:id', async (req) => {
+    await finance.deleteRow(ctx, await actorOf(req), (req.params as { id: string }).id);
+    return { ok: true };
+  });
+  app.get('/api/finance/rows/:id/history', async (req) => finance.rowHistory(ctx, await actorOf(req), (req.params as { id: string }).id));
+  app.post('/api/finance/copy', async (req) => finance.copyMonth(ctx, await actorOf(req), req.body as never));
 
   app.get('/api/shoots', async (req) => shoots.listShoots(ctx, await actorOf(req), req.query as never));
   app.post('/api/shoots', async (req) => shoots.createShoot(ctx, await actorOf(req), req.body as never));

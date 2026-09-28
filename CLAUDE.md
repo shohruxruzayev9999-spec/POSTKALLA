@@ -33,4 +33,5 @@ Actions → workflow "Server" (manual, input `deploy`) builds web + API image an
 - [x] Tasks: editable kanban columns, list, calendar, filters, checklist, comments; escalation 3 → PM → CEO
 - [x] Syomka: week grid + day columns by operator/location, crew DMs, conflicts, reminders (24 h, 2 h)
 - [x] Dizayn/Media pages: month stats, completion ring, review queue with approve/return, team share of open work, project progress
-- [ ] Moliya, Onboarding, Hisobotlar, AI digest, Obuna, ru/en translations
+- [x] Moliya (CEO/Finance only): editable income/expense grid, derived status, debtors, month copy, trend chart, audit history
+- [ ] Onboarding, Hisobotlar, AI digest, Obuna, ru/en translations

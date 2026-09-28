@@ -363,3 +363,31 @@ export const shoots = pgTable(
   },
   (t) => [index('shoots_company_day_idx').on(t.companyId, t.day)],
 );
+
+/**
+ * Money (CEO/Finance only). One editable row per invoice line (INCOME: what a client owes for a month)
+ * or cost (EXPENSE). Status is derived: paid ≥ amount → PAID, 0 < paid → PARTIAL, due date passed → OVERDUE.
+ */
+export const financeRows = pgTable(
+  'finance_rows',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().default('INCOME'), // INCOME | EXPENSE
+    month: text('month').notNull(), // YYYY-MM
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    /** Client for income, category for expenses (Oylik, Reklama byudjeti, Ijara, …). */
+    party: text('party').notNull().default(''),
+    title: text('title').notNull().default(''),
+    amount: bigint('amount', { mode: 'number' }).notNull().default(0),
+    paid: bigint('paid', { mode: 'number' }).notNull().default(0),
+    dueDate: date('due_date'),
+    paidAt: date('paid_at'),
+    note: text('note'),
+    position: integer('position').notNull().default(0),
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('finance_rows_company_month_idx').on(t.companyId, t.month)],
+);
