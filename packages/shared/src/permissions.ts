@@ -5,7 +5,7 @@ import { DomainError } from './errors.js';
  * "on which data". Every API call goes through {@link checkAccess} — the frontend only hides
  * buttons, it never protects anything.
  */
-export const ROLES = ['OWNER', 'ADMIN', 'HR', 'FINANCE', 'PM', 'DEPT_HEAD', 'EMPLOYEE'] as const;
+export const ROLES = ['OWNER', 'ADMIN', 'HR', 'FINANCE', 'MARKETER', 'PM', 'DEPT_HEAD', 'EMPLOYEE'] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Scope = 'COMPANY' | 'DEPARTMENT' | 'PROJECT' | 'OWN';
@@ -43,82 +43,77 @@ type Matrix = Record<Role, Partial<Record<Action, Scope[]>>>;
 const ALL_COMPANY = Object.fromEntries(ACTIONS.map((a) => [a, ['COMPANY']])) as Record<Action, Scope[]>;
 const C: Scope[] = ['COMPANY'];
 
-/** The permission matrix from the product spec ("Rollar va dostuplar"). */
+/**
+ * Visibility policy (CEO decision, 29 Sep 2026): everyone sees the whole company's work —
+ * dashboard, projects, tasks, team, attendance, KPI — EXCEPT money. Finance is CEO-only
+ * (plus the Finance role); a salary is visible to its owner, HR and Finance. Private 1:1 tasks
+ * are filtered separately in the task service (only giver, assignee, reviewer and Owner).
+ * Managing stays narrow: a role changes only what it is responsible for.
+ */
+const SEE_ALL: Partial<Record<Action, Scope[]>> = {
+  'dashboard.view': C,
+  'project.view': C,
+  'task.view': C,
+  'employee.directory': C,
+  'employee.profile': C,
+  'attendance.view': C,
+  'kpi.view': C,
+  'client.view': C,
+  'salary.view': ['OWN'],
+};
+
 export const PERMISSION_MATRIX: Matrix = {
   OWNER: ALL_COMPANY,
   ADMIN: {
     ...ALL_COMPANY,
-    'salary.view': undefined,
+    'salary.view': ['OWN'],
     'salary.manage': undefined,
     'finance.view': undefined,
     'finance.manage': undefined,
     'billing.manage': undefined,
   },
   HR: {
-    'dashboard.view': C,
-    'employee.directory': C,
-    'employee.profile': C,
+    ...SEE_ALL,
     'employee.manage': C,
     'salary.view': C,
     'salary.manage': C,
-    'attendance.view': C,
     'attendance.manage': C,
-    'kpi.view': C,
     'kpi.closeMonth': C,
     'audit.view': C,
   },
   FINANCE: {
-    'dashboard.view': C,
-    'project.view': C,
-    'employee.directory': C,
-    'employee.profile': C,
+    ...SEE_ALL,
     'salary.view': C,
     'salary.manage': C,
-    'attendance.view': C,
-    'kpi.view': C,
     'finance.view': C,
     'finance.manage': C,
-    'client.view': C,
     'audit.view': C,
   },
-  PM: {
-    'dashboard.view': ['PROJECT'],
-    'project.view': ['PROJECT'],
+  MARKETER: {
+    ...SEE_ALL,
     'project.manage': ['PROJECT'],
-    'task.view': ['PROJECT'],
+    'task.manage': C,
+    'task.review': C,
+    'client.manage': ['PROJECT'],
+  },
+  PM: {
+    ...SEE_ALL,
+    'project.manage': ['PROJECT'],
     'task.manage': ['PROJECT'],
     'task.review': ['PROJECT'],
-    'employee.directory': C,
-    'employee.profile': ['PROJECT'],
-    'kpi.view': ['PROJECT'],
-    'finance.view': ['PROJECT'],
-    'client.view': ['PROJECT'],
     'client.manage': ['PROJECT'],
   },
   DEPT_HEAD: {
-    'dashboard.view': ['DEPARTMENT'],
-    'project.view': ['DEPARTMENT'],
-    'task.view': ['DEPARTMENT'],
+    ...SEE_ALL,
     'task.manage': ['DEPARTMENT'],
     'task.review': ['DEPARTMENT'],
-    'employee.directory': C,
-    'employee.profile': ['DEPARTMENT'],
     'employee.manage': ['DEPARTMENT'],
-    'attendance.view': ['DEPARTMENT'],
-    'kpi.view': ['DEPARTMENT'],
     'kpi.rate': ['DEPARTMENT'],
     'settings.department': ['DEPARTMENT'],
   },
   EMPLOYEE: {
-    'dashboard.view': ['OWN'],
-    'project.view': ['PROJECT'],
-    'task.view': ['OWN', 'DEPARTMENT'],
+    ...SEE_ALL,
     'task.manage': ['OWN'],
-    'employee.directory': C,
-    'employee.profile': ['OWN'],
-    'salary.view': ['OWN'],
-    'attendance.view': ['OWN'],
-    'kpi.view': ['OWN'],
   },
 };
 
@@ -211,6 +206,7 @@ export const ROLE_RANK: Record<Role, number> = {
   ADMIN: 90,
   HR: 70,
   FINANCE: 70,
+  MARKETER: 50,
   PM: 50,
   DEPT_HEAD: 50,
   EMPLOYEE: 10,

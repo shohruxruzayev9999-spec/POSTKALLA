@@ -8,6 +8,8 @@ import {
   localDateString,
   localParts,
   minutesAfterStart,
+  workingDatesOfMonth,
+  zonedTime,
 } from '@retarget/shared';
 import { z } from 'zod';
 import { attendance, memberships, users } from '../db/schema.js';
@@ -82,8 +84,16 @@ export async function checkOut(ctx: Ctx, actor: ResolvedActor, input: z.input<ty
 export async function today(ctx: Ctx, actor: ResolvedActor) {
   const day = localDateString(ctx.now(), actor.company.timezone);
   const [row] = await ctx.db.select().from(attendance).where(and(eq(attendance.companyId, actor.companyId), eq(attendance.userId, actor.userId), eq(attendance.day, day)));
+  const schedule = scheduleOf(actor.company);
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  const [sh, sm] = schedule.start.split(':').map(Number) as [number, number];
+  const [eh, em] = schedule.end.split(':').map(Number) as [number, number];
+  const p = localParts(ctx.now(), schedule.timezone);
   return {
     day,
+    workingDay: isWorkingDay({ y, m, d, weekday: p.weekday }, schedule),
+    startsAt: zonedTime(y, m, d, sh, sm, schedule.timezone),
+    endsAt: zonedTime(y, m, d, eh, em, schedule.timezone),
     checkIn: row?.checkIn ?? null,
     checkOut: row?.checkOut ?? null,
     lateMinutes: row?.lateMinutes ?? 0,
@@ -138,4 +148,64 @@ export async function editAttendance(ctx: Ctx, actor: ResolvedActor, input: z.in
     .returning();
   await audit(ctx.db, actor, 'attendance.edit', 'attendance', row!.id, { userId: data.userId, day: data.day, note: data.note });
   return row!;
+}
+
+export const monthInput = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  userId: z.string().uuid().optional(),
+});
+
+export type DayStatus = 'ON_TIME' | 'LATE' | 'ABSENT' | 'OFF' | 'FUTURE' | 'BEFORE_JOIN';
+
+/** One person's month as a calendar: every date with its status and times. */
+export async function attendanceMonth(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof monthInput>) {
+  const f = monthInput.parse(input);
+  const userId = f.userId ?? actor.userId;
+  const [m] = await ctx.db.select().from(memberships).where(and(eq(memberships.companyId, actor.companyId), eq(memberships.userId, userId)));
+  if (!m) throw notFound('Hodim');
+  checkAccess(actor, 'attendance.view', { companyId: actor.companyId, departmentId: m.departmentId, ownerUserIds: [userId] });
+  const schedule = scheduleOf(actor.company);
+  const [y, mo] = f.month.split('-').map(Number) as [number, number];
+  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const working = new Set(workingDatesOfMonth(y, mo, schedule));
+  const today = localDateString(ctx.now(), schedule.timezone);
+  const joined = localDateString(m.joinedAt, schedule.timezone);
+  const rows = await ctx.db
+    .select()
+    .from(attendance)
+    .where(and(eq(attendance.companyId, actor.companyId), eq(attendance.userId, userId), gte(attendance.day, `${f.month}-01`), lte(attendance.day, `${f.month}-${String(daysInMonth).padStart(2, '0')}`)));
+  const days = Array.from({ length: daysInMonth }, (_, i) => {
+    const date = `${f.month}-${String(i + 1).padStart(2, '0')}`;
+    const r = rows.find((x) => x.day === date);
+    const isWorking = working.has(date);
+    let status: DayStatus;
+    if (r?.checkIn) status = r.lateMinutes > 0 ? 'LATE' : 'ON_TIME';
+    else if (!isWorking) status = 'OFF';
+    else if (date > today) status = 'FUTURE';
+    else if (date < joined) status = 'BEFORE_JOIN';
+    else if (date === today) status = 'FUTURE';
+    else status = 'ABSENT';
+    return {
+      date,
+      weekday: ((new Date(Date.UTC(y, mo - 1, i + 1)).getUTCDay() + 6) % 7) + 1,
+      working: isWorking,
+      status,
+      checkIn: r?.checkIn ?? null,
+      checkOut: r?.checkOut ?? null,
+      lateMinutes: r?.lateMinutes ?? 0,
+      note: r?.note ?? null,
+    };
+  });
+  const counted = days.filter((d) => d.working && d.status !== 'FUTURE' && d.status !== 'BEFORE_JOIN');
+  return {
+    month: f.month,
+    userId,
+    days,
+    summary: {
+      workDays: counted.length,
+      onTime: counted.filter((d) => d.status === 'ON_TIME').length,
+      late: counted.filter((d) => d.status === 'LATE').length,
+      absent: counted.filter((d) => d.status === 'ABSENT').length,
+    },
+  };
 }

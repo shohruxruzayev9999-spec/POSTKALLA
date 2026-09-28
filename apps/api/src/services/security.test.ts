@@ -4,7 +4,7 @@ import { auditLog, memberships } from '../db/schema.js';
 import { agency, makeUser } from '../test/fixtures.js';
 import { loadActor } from './context.js';
 import { acceptInvitation, createInvitation, listMembers, updateMember } from './org.js';
-import { createProject, listProjects } from './projects.js';
+import { createProject, listProjects, updateProject } from './projects.js';
 import { actOnTask, createTask, getTask, listTasks, updateTask } from './tasks.js';
 
 const in2days = (now: Date) => new Date(now.getTime() + 2 * 86_400_000);
@@ -167,11 +167,30 @@ describe('tasks', () => {
     await expect(actOnTask(a.ctx, bekzod, task.id, 'START')).rejects.toThrow(/ruxsat/);
   });
 
-  it('someone from another department cannot even see it', async () => {
+  it('a 1:1 task is seen only by the people in it and the CEO, and never posted to a group', async () => {
+    const { a, pm, project } = await setup();
+    const cardsBefore = a.notifier.cards.length;
+    const secret = await createTask(a.ctx, pm, { title: 'Maxfiy: taklif narxi', projectId: project.id, assigneeUserId: a.users.aziz.id, deadline: in2days(a.clock.t), isPrivate: true });
+    expect(a.notifier.cards.length).toBe(cardsBefore);
+    for (const [who, sees] of [
+      [a.users.aziz.id, true],
+      [a.users.pm.id, true],
+      [a.users.ceo.id, true],
+      [a.users.bekzod.id, false],
+      [a.users.head.id, false],
+      [a.users.admin.id, false],
+    ] as const) {
+      const actor = await a.actor(who);
+      expect((await listTasks(a.ctx, actor)).some((t) => t.id === secret.id)).toBe(sees);
+      if (!sees) await expect(getTask(a.ctx, actor, secret.id)).rejects.toThrow(/topilmadi/);
+    }
+  });
+
+  it('everyone sees tasks of other departments (but cannot act on them)', async () => {
     const { a, task } = await setup();
     const otabek = await a.actor(a.users.videographer.id);
-    expect(await listTasks(a.ctx, otabek)).toEqual([]);
-    await expect(getTask(a.ctx, otabek, task.id)).rejects.toThrow(/topilmadi/);
+    expect((await listTasks(a.ctx, otabek)).map((t) => t.id)).toContain(task.id);
+    await expect(actOnTask(a.ctx, otabek, task.id, 'START')).rejects.toThrow(/ruxsat/);
   });
 
   it('the assignee cannot move their own deadline; a manager can, with a reason, and the original stays', async () => {
@@ -191,12 +210,14 @@ describe('tasks', () => {
     await expect(createTask(a.ctx, aziz, { title: 'Bekzodga', assigneeUserId: a.users.bekzod.id, deadline: in2days(a.clock.t) })).rejects.toThrow(/Ruxsat/);
   });
 
-  it('a PM sees only their projects', async () => {
+  it('a PM sees all projects but manages only their own', async () => {
     const { a, project } = await setup();
     const owner = await a.actor(a.users.ceo.id);
-    await createProject(a.ctx, owner, { name: 'Boshqa loyiha', managerUserId: a.users.ceo.id });
+    const other = await createProject(a.ctx, owner, { name: 'Boshqa loyiha', managerUserId: a.users.ceo.id });
     const pm = await a.actor(a.users.pm.id);
-    expect((await listProjects(a.ctx, pm)).map((p) => p.id)).toEqual([project.id]);
-    expect((await listProjects(a.ctx, owner)).length).toBe(2);
+    expect((await listProjects(a.ctx, pm)).length).toBe(2);
+    await updateProject(a.ctx, pm, project.id, { color: '#A3E635' });
+    await expect(updateProject(a.ctx, pm, other.id, { color: '#A3E635' })).rejects.toThrow(/Ruxsat/);
   });
+
 });

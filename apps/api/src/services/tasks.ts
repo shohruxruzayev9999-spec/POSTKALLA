@@ -30,6 +30,13 @@ export function taskTarget(t: Pick<TaskRow, 'companyId' | 'departmentId' | 'proj
   };
 }
 
+/** Seeing a task: the role allows it, and a private 1:1 task only for the people in it and the Owner. */
+export function canSeeTask(actor: ResolvedActor, t: TaskRow): boolean {
+  if (!canAccess(actor, 'task.view', taskTarget(t))) return false;
+  if (!t.isPrivate) return true;
+  return actor.roles.includes('OWNER') || [t.assigneeUserId, t.reviewerUserId, t.createdBy].includes(actor.userId);
+}
+
 /** Rights beyond "my own task" — used for cancel, re-assign, deadline changes. */
 function managesBeyondOwn(actor: ResolvedActor, t: TaskRow): boolean {
   return canAccess(actor, 'task.manage', { ...taskTarget(t), ownerUserIds: [] });
@@ -58,6 +65,7 @@ export const createTaskInput = z.object({
   deadline: z.coerce.date(),
   priority: z.enum(TASK_PRIORITIES).default('MEDIUM'),
   points: z.number().int().min(1).max(20).default(1),
+  isPrivate: z.boolean().default(false),
 });
 
 export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>) {
@@ -116,6 +124,7 @@ export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<
         description: data.description ?? null,
         priority: data.priority,
         points: data.points,
+        isPrivate: data.isPrivate,
         deadline: data.deadline,
         originalDeadline: data.deadline,
         createdAt: ctx.now(),
@@ -139,7 +148,7 @@ export async function loadTask(db: Db, companyId: string, taskId: string): Promi
 async function loadVisibleTask(ctx: Ctx, actor: ResolvedActor, taskId: string): Promise<TaskRow> {
   const t = await loadTask(ctx.db, actor.companyId, taskId);
   // Hide existence from people who may not see it.
-  if (!canAccess(actor, 'task.view', taskTarget(t))) throw notFound('Vazifa');
+  if (!canSeeTask(actor, t)) throw notFound('Vazifa');
   return t;
 }
 
@@ -271,7 +280,7 @@ export async function listTasks(ctx: Ctx, actor: ResolvedActor, input: z.input<t
     .orderBy(asc(tasks.deadline))
     .limit(1000);
   return rows
-    .filter((r) => canAccess(actor, 'task.view', taskTarget(r.t)))
+    .filter((r) => canSeeTask(actor, r.t))
     .map((r) => ({
       ...r.t,
       project: r.project,
@@ -351,7 +360,7 @@ export async function publishCard(ctx: Ctx, taskId: string): Promise<void> {
     .from(tasks)
     .leftJoin(projects, eq(projects.id, tasks.projectId))
     .where(eq(tasks.id, taskId));
-  if (!row) return;
+  if (!row || row.t.isPrivate) return; // 1:1 tasks never go to a group
   const card = await taskCard(ctx.db, taskId);
   if (!card.groupChatId && row.chat) card.groupChatId = row.chat;
   if (!card.groupChatId) return;

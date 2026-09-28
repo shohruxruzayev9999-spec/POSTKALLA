@@ -46,7 +46,7 @@ export async function runReminders(ctx: Ctx): Promise<{ sent: number; skipped: n
 
     for (const step of send) {
       if (!(await claim(step.key, true))) continue; // another worker got it
-      await deliver(ctx, t.id, c.id, step, chat, headUserId, t.assigneeUserId);
+      await deliver(ctx, t.id, c.id, step, chat, headUserId, t.assigneeUserId, t.isPrivate);
       sent++;
     }
   }
@@ -61,6 +61,7 @@ async function deliver(
   groupChatId: number | null,
   headUserId: string | null,
   assigneeUserId: string,
+  isPrivate: boolean,
 ) {
   const recipients = new Set<string>();
   if (step.audience.includes('ASSIGNEE')) recipients.add(assigneeUserId);
@@ -83,7 +84,7 @@ async function deliver(
       card,
       step,
       privateChatIds: people.filter((p) => p.canDm).map((p) => p.telegramId),
-      includeGroup: step.audience.includes('GROUP') && !!groupChatId,
+      includeGroup: step.audience.includes('GROUP') && !!groupChatId && !isPrivate,
       previous: previous.map((p) => ({ chatId: p.chatId, messageId: p.messageId })),
     });
     // Only one live reminder per chat: the notifier deleted the old ones, we keep the new ones.

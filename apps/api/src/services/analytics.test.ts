@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { zonedTime } from '@retarget/shared';
 import { agency } from '../test/fixtures.js';
 import { dashboard, memberScores } from './analytics.js';
-import { checkIn, checkOut, editAttendance } from './attendance.js';
+import { attendanceMonth, checkIn, checkOut, editAttendance } from './attendance.js';
 import { updateCompany } from './org.js';
 import { actOnTask, createTask } from './tasks.js';
 
@@ -17,6 +17,23 @@ describe('attendance', () => {
     await expect(checkIn(a.ctx, aziz, {})).rejects.toThrow(/allaqachon/);
     a.clock.set(tk(21, 18, 5));
     expect((await checkOut(a.ctx, aziz, {})).checkOut).toEqual(tk(21, 18, 5));
+  });
+
+  it('shows a month as a calendar', async () => {
+    const a = await agency(tk(21, 10, 12));
+    const aziz = await a.actor(a.users.aziz.id);
+    await checkIn(a.ctx, aziz, {});
+    a.clock.set(tk(23, 9, 55));
+    await checkIn(a.ctx, aziz, {});
+    a.clock.set(tk(24, 12));
+    const m = await attendanceMonth(a.ctx, aziz, { month: '2026-09' });
+    const st = (d: number) => m.days[d - 1]!.status;
+    expect(st(21)).toBe('LATE');
+    expect(st(22)).toBe('ABSENT');
+    expect(st(23)).toBe('ON_TIME');
+    expect(st(27)).toBe('OFF'); // Sunday
+    expect(st(28)).toBe('FUTURE');
+    expect(m.summary).toMatchObject({ onTime: 1, late: 1, absent: 1 });
   });
 
   it('requires being at the office when the office location is set', async () => {
@@ -67,14 +84,14 @@ describe('KPI & motivation from real data', () => {
     expect(Object.keys(s.kpi.components).sort()).toEqual(['attendance', 'deadline', 'volume']);
     expect(s.kpi.score).not.toBeNull();
 
-    // Visibility: a colleague can't open Aziz's KPI; the head and the CEO can.
+    // Visibility: KPI is open to the whole team (only money is hidden).
     const bekzod = await a.actor(a.users.bekzod.id);
-    await expect(memberScores(a.ctx, bekzod, a.users.aziz.id)).rejects.toThrow(/Ruxsat/);
+    expect((await memberScores(a.ctx, bekzod, a.users.aziz.id)).kpi.score).toBe(s.kpi.score);
     const ceoDash = await dashboard(a.ctx, await a.actor(a.users.ceo.id));
     const headDash = await dashboard(a.ctx, head);
     const bekDash = await dashboard(a.ctx, bekzod);
     expect(ceoDash.team.length).toBe(8);
-    expect(headDash.team.map((t) => t.name).sort()).toEqual(['Aziz', 'Bekzod', 'Jasur']);
-    expect(bekDash.team.map((t) => t.name)).toEqual(['Bekzod']);
+    expect(headDash.team.length).toBe(8);
+    expect(bekDash.team.length).toBe(8);
   });
 });

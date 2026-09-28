@@ -158,6 +158,8 @@ export const tasks = pgTable(
     originalDeadline: ts('original_deadline').notNull(),
     revision: integer('revision').notNull().default(1),
     points: integer('points').notNull().default(1),
+    /** 1:1 task: visible only to its giver, assignee, reviewer and the Owner; never posted to a group. */
+    isPrivate: boolean('is_private').notNull().default(false),
     completedAt: ts('completed_at'),
     /** Where the task card lives in Telegram (edited in place on every change). */
     groupChatId: bigint('group_chat_id', { mode: 'number' }),

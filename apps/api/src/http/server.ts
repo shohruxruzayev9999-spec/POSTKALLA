@@ -154,6 +154,7 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.get('/api/attendance/today', async (req) => att.today(ctx, await actorOf(req)));
   app.post('/api/attendance/check-in', async (req) => att.checkIn(ctx, await actorOf(req), (req.body ?? {}) as never));
   app.post('/api/attendance/check-out', async (req) => att.checkOut(ctx, await actorOf(req), (req.body ?? {}) as never));
+  app.get('/api/attendance/month', async (req) => att.attendanceMonth(ctx, await actorOf(req), req.query as never));
   app.get('/api/attendance', async (req) => att.listAttendance(ctx, await actorOf(req), req.query as never));
   app.put('/api/attendance', async (req) => att.editAttendance(ctx, await actorOf(req), req.body as never));
 

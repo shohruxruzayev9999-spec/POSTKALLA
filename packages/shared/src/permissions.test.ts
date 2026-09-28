@@ -9,6 +9,7 @@ const pm: Actor = { ...base, userId: 'u-pm', roles: ['PM'], projectIds: ['p-kafe
 const hr: Actor = { ...base, userId: 'u-hr', roles: ['HR'] };
 const admin: Actor = { ...base, userId: 'u-admin', roles: ['ADMIN'] };
 const owner: Actor = { ...base, userId: 'u-owner', roles: ['OWNER'] };
+const marketer: Actor = { ...base, userId: 'u-mkt', roles: ['MARKETER'] };
 
 describe('permissions — the security holes found in the old system stay closed', () => {
   it('an employee cannot see company finance', () => {
@@ -48,6 +49,32 @@ describe('permissions — the security holes found in the old system stay closed
 
   it('nobody crosses tenants, not even an owner', () => {
     expect(canAccess(owner, 'task.view', { companyId: 'c2' })).toBe(false);
+  });
+});
+
+describe('visibility policy: everyone sees the work, only the CEO sees the money', () => {
+  it('an employee sees every department and project, but never finance or others\' salaries', () => {
+    expect(canAccess(employee, 'task.view', { companyId: 'c1', departmentId: 'd-video' })).toBe(true);
+    expect(canAccess(employee, 'project.view', { companyId: 'c1', projectId: 'p-any' })).toBe(true);
+    expect(canAccess(employee, 'kpi.view', { companyId: 'c1', ownerUserIds: ['u-other'] })).toBe(true);
+    expect(canAccess(employee, 'finance.view', { companyId: 'c1' })).toBe(false);
+    expect(canAccess(employee, 'salary.view', { companyId: 'c1', ownerUserIds: ['u-other'] })).toBe(false);
+  });
+
+  it('a marketer and a PM see everything except finance', () => {
+    for (const a of [marketer, pm]) {
+      expect(canAccess(a, 'dashboard.view', { companyId: 'c1' })).toBe(true);
+      expect(canAccess(a, 'attendance.view', { companyId: 'c1', ownerUserIds: ['u-x'] })).toBe(true);
+      expect(canAccess(a, 'finance.view', { companyId: 'c1' })).toBe(false);
+      expect(canAccess(a, 'salary.view', { companyId: 'c1', ownerUserIds: ['u-x'] })).toBe(false);
+    }
+    expect(canAccess(owner, 'finance.view', { companyId: 'c1' })).toBe(true);
+  });
+
+  it('seeing is not managing', () => {
+    expect(canAccess(employee, 'task.manage', { companyId: 'c1', departmentId: 'd-video', ownerUserIds: ['u-x'] })).toBe(false);
+    expect(canAccess(marketer, 'task.manage', { companyId: 'c1', ownerUserIds: ['u-x'] })).toBe(true);
+    expect(canAccess(marketer, 'employee.manage', { companyId: 'c1' })).toBe(false);
   });
 });
 
