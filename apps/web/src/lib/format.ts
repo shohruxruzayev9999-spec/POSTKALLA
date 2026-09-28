@@ -111,19 +111,7 @@ export const STAGE: Record<string, string> = {
 
 export const KPI_LABEL: Record<string, string> = {
   deadline: 'Deadline',
-  quality: 'Sifat (1-urinish)',
   volume: 'Hajm (reja)',
-  attendance: 'Davomat',
-  manager: 'Rahbar bahosi',
-  result: 'Natija',
+  attendance: 'Intizom',
 };
 
-export const TEMPLATE_LABEL: Record<string, string> = {
-  DESIGN: 'Dizayn',
-  VIDEO: 'Video / montaj',
-  SMM: 'SMM',
-  TARGET: 'Target',
-  SALES: 'Sotuv',
-  PM: 'Loyiha boshqaruvi',
-  DEFAULT: 'Umumiy',
-};

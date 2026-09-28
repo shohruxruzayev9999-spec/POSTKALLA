@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { zonedTime } from '@retarget/shared';
 import { agency } from '../test/fixtures.js';
-import { dashboard, memberScores, rateMember } from './analytics.js';
+import { dashboard, memberScores } from './analytics.js';
 import { checkIn, checkOut, editAttendance } from './attendance.js';
 import { updateCompany } from './org.js';
 import { actOnTask, createTask } from './tasks.js';
@@ -58,16 +58,13 @@ describe('KPI & motivation from real data', () => {
       a.clock.set(doneAt);
       await actOnTask(a.ctx, head, t.id, 'APPROVE');
     }
-    await rateMember(a.ctx, head, { userId: a.users.aziz.id, month: '2026-09', rating: 4.25 });
-    await expect(rateMember(a.ctx, aziz, { userId: a.users.aziz.id, month: '2026-09', rating: 5 })).rejects.toThrow();
 
     a.clock.set(tk(8, 12));
     const s = await memberScores(a.ctx, aziz, a.users.aziz.id);
     // Motivation: (1 + (1 − 8/48)) / 2 = 0.9167 → 92
     expect(s.motivation.score).toBe(92);
     expect(s.kpi.components.deadline).toBe(50);
-    expect(s.kpi.components.quality).toBe(100);
-    expect(s.kpi.components.manager).toBe(85);
+    expect(Object.keys(s.kpi.components).sort()).toEqual(['attendance', 'deadline', 'volume']);
     expect(s.kpi.score).not.toBeNull();
 
     // Visibility: a colleague can't open Aziz's KPI; the head and the CEO can.

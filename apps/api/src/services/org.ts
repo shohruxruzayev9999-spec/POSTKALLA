@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   DomainError,
-  KPI_TEMPLATES,
   ROLE_RANK,
   ROLES,
   assertCanGrantRole,
@@ -35,7 +34,7 @@ export async function audit(
 export const createCompanyInput = z.object({
   name: z.string().trim().min(2).max(80),
   departments: z
-    .array(z.object({ name: z.string().trim().min(1).max(60), kpiTemplate: z.enum(Object.keys(KPI_TEMPLATES) as [string, ...string[]]) }))
+    .array(z.object({ name: z.string().trim().min(1).max(60) }))
     .max(20)
     .default([]),
 });
@@ -47,7 +46,7 @@ export async function createCompany(ctx: Ctx, userId: string, input: z.input<typ
     const [company] = await tx.insert(companies).values({ name: data.name }).returning();
     await tx.insert(memberships).values({ companyId: company!.id, userId, roles: ['OWNER'], position: 'CEO', joinedAt: ctx.now() });
     if (data.departments.length) {
-      await tx.insert(departments).values(data.departments.map((d) => ({ companyId: company!.id, name: d.name, kpiTemplate: d.kpiTemplate })));
+      await tx.insert(departments).values(data.departments.map((d) => ({ companyId: company!.id, name: d.name })));
     }
     await audit(tx as unknown as Db, { userId, companyId: company!.id }, 'company.create', 'company', company!.id);
     return company!;
@@ -106,7 +105,6 @@ export async function updateCompany(ctx: Ctx, actor: ResolvedActor, input: z.inp
 
 export const departmentInput = z.object({
   name: z.string().trim().min(1).max(60),
-  kpiTemplate: z.enum(Object.keys(KPI_TEMPLATES) as [string, ...string[]]).default('DEFAULT'),
   headUserId: z.string().uuid().nullable().optional(),
   requireFileOnSubmit: z.boolean().optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),

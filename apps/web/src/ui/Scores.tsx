@@ -1,4 +1,4 @@
-import { KPI_LABEL, monthName, STAGE, TEMPLATE_LABEL } from '../lib/format';
+import { KPI_LABEL, monthName, STAGE } from '../lib/format';
 import type { Scores } from '../lib/types';
 import { Bar, Ring, scoreTone } from './kit';
 
@@ -27,7 +27,7 @@ export function ScoresView({ s }: { s: Scores }) {
       <div className="card stack" style={{ gap: 12 }}>
         <div className="row between">
           <div className="section-title">KPI tarkibi</div>
-          <span className="xs muted">{TEMPLATE_LABEL[k.template] ?? k.template} shabloni</span>
+          <span className="xs muted">hamma uchun bir xil</span>
         </div>
         {comps.map(([key, v]) => (
           <div key={key}>

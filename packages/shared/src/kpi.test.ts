@@ -1,47 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { KPI_TEMPLATES, bonusCoefficient, computeKpi, pointsToNextBand, scoreKpi, validateWeights } from './kpi.js';
+import { KPI_WEIGHTS, bonusCoefficient, computeKpi, pointsToNextBand, scoreKpi, validateWeights } from './kpi.js';
 
-describe('KPI', () => {
-  it('reproduces the design mock-up: Aziz K., designer → 86', () => {
-    const r = scoreKpi(
-      { deadline: 84, quality: 78, volume: 95, attendance: 94, manager: 85, result: null },
-      KPI_TEMPLATES.DESIGN,
-    );
-    expect(r.exact).toBeCloseTo(85.55, 2);
-    expect(r.score).toBe(86);
+describe('KPI (one formula for everyone)', () => {
+  it('weights deadline 50, volume 35, attendance 15', () => {
+    const r = scoreKpi({ deadline: 80, volume: 90, attendance: 100 });
+    expect(r.exact).toBeCloseTo(0.5 * 80 + 0.35 * 90 + 0.15 * 100, 6); // 86.5
+    expect(r.score).toBe(87);
   });
 
   it('computes components from raw system data', () => {
-    const r = computeKpi(
-      {
-        doneTasks: 35,
-        doneOnTime: 30,
-        approvedTasks: 32,
-        approvedFirstPass: 25,
-        donePoints: 57,
-        planPoints: 60,
-        workDays: 23,
-        onTimeDays: 22,
-        managerRating: 4.25,
-      },
-      KPI_TEMPLATES.DESIGN,
-    );
-    expect(Math.round(r.components.deadline!)).toBe(86);
-    expect(Math.round(r.components.quality!)).toBe(78);
-    expect(r.components.manager).toBe(85);
-    expect(r.score).toBeGreaterThan(80);
+    const r = computeKpi({ doneTasks: 20, doneOnTime: 17, donePoints: 30, planPoints: 32, workDays: 22, onTimeDays: 21 });
+    expect(r.components.deadline).toBe(85);
+    expect(Math.round(r.components.volume!)).toBe(94);
+    expect(Math.round(r.components.attendance!)).toBe(95);
+    expect(r.score).toBe(90); // 42.5 + 32.8 + 14.3
   });
 
   it('spreads the weight of a component without data', () => {
-    // No manager rating yet: the remaining 85% is scaled to 100%.
-    const r = scoreKpi({ deadline: 100, quality: 100, volume: 100, attendance: 100, manager: null, result: null }, KPI_TEMPLATES.DESIGN);
-    expect(r.score).toBe(100);
-    expect(r.effectiveWeights.manager).toBe(0);
+    // No tasks yet: only attendance counts.
+    const r = scoreKpi({ deadline: null, volume: null, attendance: 90 });
+    expect(r.score).toBe(90);
+    expect(r.effectiveWeights.attendance).toBe(100);
   });
 
-  it('every template sums to 100', () => {
-    for (const w of Object.values(KPI_TEMPLATES)) expect(() => validateWeights(w)).not.toThrow();
-    expect(() => validateWeights({ ...KPI_TEMPLATES.DESIGN, manager: 20 })).toThrow();
+  it('caps volume at 100 and returns null with no data', () => {
+    expect(computeKpi({ doneTasks: 0, doneOnTime: 0, donePoints: 50, planPoints: 10, workDays: 0, onTimeDays: 0 }).score).toBe(100);
+    expect(scoreKpi({ deadline: null, volume: null, attendance: null }).score).toBeNull();
+  });
+
+  it('weights sum to 100', () => {
+    expect(() => validateWeights(KPI_WEIGHTS)).not.toThrow();
+    expect(() => validateWeights({ ...KPI_WEIGHTS, deadline: 60 })).toThrow();
   });
 
   it('bonus bands', () => {

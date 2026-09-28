@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../lib/api';
-import { TEMPLATE_LABEL } from '../lib/format';
 import { useDepartments, useMembers } from '../lib/queries';
 import type { Company, Department } from '../lib/types';
 import { getLocation } from '../lib/tg';
@@ -165,7 +164,7 @@ function Departments() {
               <div className="grow">
                 <div className="b">{d.name}</div>
                 <div className="xs muted">
-                  {TEMPLATE_LABEL[d.kpiTemplate]} KPI · {d.memberCount} kishi{d.requireFileOnSubmit ? ' · fayl majburiy' : ''}
+                  {d.memberCount} kishi{d.requireFileOnSubmit ? ' · fayl majburiy' : ''}
                 </div>
               </div>
               <Icon name="chevron" size={16} />
@@ -186,14 +185,13 @@ function DepartmentForm({ dep, onDone }: { dep: Department | null; onDone: () =>
   const members = useMembers();
   const [form, setForm] = useState({
     name: dep?.name ?? '',
-    kpiTemplate: dep?.kpiTemplate ?? 'DEFAULT',
     headUserId: dep?.headUserId ?? '',
     requireFileOnSubmit: dep?.requireFileOnSubmit ?? false,
   });
   const company = can('settings.company');
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: form.name, kpiTemplate: form.kpiTemplate, requireFileOnSubmit: form.requireFileOnSubmit, ...(company ? { headUserId: form.headUserId || null } : {}) };
+      const body = { name: form.name, requireFileOnSubmit: form.requireFileOnSubmit, ...(company ? { headUserId: form.headUserId || null } : {}) };
       return dep ? api(`/departments/${dep.id}`, { method: 'PATCH', body }) : api('/departments', { method: 'POST', body });
     },
     onSuccess: () => {
@@ -208,13 +206,6 @@ function DepartmentForm({ dep, onDone }: { dep: Department | null; onDone: () =>
     <div className="stack">
       <Field label="Nomi">
         <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-      </Field>
-      <Field label="KPI shabloni" hint="Har bo‘limning KPI tarkibi va og‘irliklari shu shablondan olinadi.">
-        <select className="input" value={form.kpiTemplate} onChange={(e) => setForm({ ...form, kpiTemplate: e.target.value })}>
-          {Object.entries(TEMPLATE_LABEL).map(([k, l]) => (
-            <option key={k} value={k}>{l}</option>
-          ))}
-        </select>
       </Field>
       {company && (
         <Field label="Bo‘lim boshlig‘i">

@@ -158,10 +158,6 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.put('/api/attendance', async (req) => att.editAttendance(ctx, await actorOf(req), req.body as never));
 
   app.get('/api/dashboard', async (req) => analytics.dashboard(ctx, await actorOf(req)));
-  app.post('/api/kpi/ratings', async (req) => {
-    await analytics.rateMember(ctx, await actorOf(req), req.body as never);
-    return { ok: true };
-  });
 
   return app;
 }

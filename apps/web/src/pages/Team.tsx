@@ -101,17 +101,7 @@ function MemberView({ id }: { id: string }) {
   const [edit, setEdit] = useState(false);
   const isSelf = id === session.user.id;
   const manageable = !isSelf && (can('employee.manage', 'COMPANY') || (can('employee.manage', 'DEPARTMENT') && !!m?.departmentId && session.ctx.headOfDepartmentIds.includes(m.departmentId)));
-  const canRate = !isSelf && (can('kpi.rate', 'COMPANY') || (can('kpi.rate', 'DEPARTMENT') && !!m?.departmentId && session.ctx.headOfDepartmentIds.includes(m.departmentId)));
 
-  const rate = useMutation({
-    mutationFn: (rating: number) => api('/kpi/ratings', { method: 'POST', body: { userId: id, month: scores.data!.kpi.month, rating } }),
-    onSuccess: () => {
-      toast('Baho saqlandi');
-      void qc.invalidateQueries({ queryKey: ['scores', id] });
-      void qc.invalidateQueries({ queryKey: ['dashboard'] });
-    },
-    onError: fail,
-  });
 
   if (!m) return <Skeleton h={80} n={3} />;
   return (
@@ -137,19 +127,6 @@ function MemberView({ id }: { id: string }) {
       </div>
 
       {scores.data && <ScoresView s={scores.data} />}
-
-      {canRate && scores.data && (
-        <div className="card stack">
-          <div className="section-title">Rahbar bahosi · {scores.data.kpi.month}</div>
-          <div className="row" style={{ gap: 8 }}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} className={`btn grow ${scores.data!.kpi.components.manager === n * 20 ? 'primary' : ''}`} disabled={rate.isPending} onClick={() => rate.mutate(n)}>
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {manageable || (can('salary.manage') && !isSelf) ? (
         edit ? (

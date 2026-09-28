@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
-import { TEMPLATE_LABEL } from '../lib/format';
 import type { User } from '../lib/types';
 import { Field, Ring } from '../ui/kit';
 
@@ -25,7 +24,7 @@ export function Onboarding({ user, onCreated }: { user: User; onCreated: (compan
     try {
       const c = await api<{ id: string }>('/companies', {
         method: 'POST',
-        body: { name, departments: PRESETS.filter((p) => picked.includes(p.name)) },
+        body: { name, departments: PRESETS.filter((p) => picked.includes(p.name)).map((p) => ({ name: p.name })) },
       });
       onCreated(c.id);
     } catch (e) {
@@ -56,7 +55,7 @@ export function Onboarding({ user, onCreated }: { user: User; onCreated: (compan
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Masalan: Nova Agency" maxLength={80} autoFocus />
           </Field>
           <div className="field">
-            <span>Bo‘limlar (KPI shabloni bilan)</span>
+            <span>Bo‘limlar</span>
             <div className="chips wrap" style={{ flexWrap: 'wrap' }}>
               {PRESETS.map((p) => (
                 <button
@@ -64,7 +63,6 @@ export function Onboarding({ user, onCreated }: { user: User; onCreated: (compan
                   type="button"
                   className={`chip ${picked.includes(p.name) ? 'on' : ''}`}
                   onClick={() => setPicked((x) => (x.includes(p.name) ? x.filter((n) => n !== p.name) : [...x, p.name]))}
-                  title={TEMPLATE_LABEL[p.kpiTemplate]}
                 >
                   {p.name}
                 </button>

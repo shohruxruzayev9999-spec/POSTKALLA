@@ -1,7 +1,5 @@
 import { and, eq, gte, inArray, lt, or, sql } from 'drizzle-orm';
 import {
-  KPI_TEMPLATES,
-  assertNotSelf,
   bonusCoefficient,
   canAccess,
   checkAccess,
@@ -11,15 +9,12 @@ import {
   pointsToNextBand,
   workingDatesOfMonth,
   zonedTime,
-  type KpiTemplate,
   type MotivationTask,
   type TaskPriority,
   type TaskStatus,
 } from '@retarget/shared';
-import { z } from 'zod';
-import { attendance, departments, kpiRatings, memberships, tasks, users } from '../db/schema.js';
+import { attendance, departments, memberships, tasks, users } from '../db/schema.js';
 import { notFound, scheduleOf, type Company, type Ctx, type ResolvedActor } from './context.js';
-import { audit } from './org.js';
 
 const DAY = 86_400_000;
 
@@ -57,11 +52,9 @@ export async function scoresFor(ctx: Ctx, company: Company, userIds: string[], m
     .select()
     .from(attendance)
     .where(and(eq(attendance.companyId, company.id), inArray(attendance.userId, userIds), gte(attendance.day, `${m}-01`), lt(attendance.day, localDateString(to, company.timezone))));
-  const ratings = await ctx.db.select().from(kpiRatings).where(and(eq(kpiRatings.companyId, company.id), eq(kpiRatings.month, m), inArray(kpiRatings.userId, userIds)));
   const members = await ctx.db
-    .select({ userId: memberships.userId, template: departments.kpiTemplate, joinedAt: memberships.joinedAt })
+    .select({ userId: memberships.userId, joinedAt: memberships.joinedAt })
     .from(memberships)
-    .leftJoin(departments, eq(departments.id, memberships.departmentId))
     .where(and(eq(memberships.companyId, company.id), inArray(memberships.userId, userIds)));
 
   const today = localDateString(now, company.timezone);
@@ -91,29 +84,21 @@ export async function scoresFor(ctx: Ctx, company: Company, userIds: string[], m
     const joined = member ? localDateString(member.joinedAt, company.timezone) : '0000-00-00';
     const myWorkDates = workDates.filter((d) => d >= joined);
     const myAtt = att.filter((a) => a.userId === userId && myWorkDates.includes(a.day));
-    const rating = ratings.find((r) => r.userId === userId);
-    const templateKey = (member?.template ?? 'DEFAULT') as KpiTemplate;
-    const weights = KPI_TEMPLATES[templateKey] ?? KPI_TEMPLATES.DEFAULT;
 
     const kpi = computeKpi(
       {
         doneTasks: done.length,
         doneOnTime: done.filter((t) => t.completedAt! <= t.originalDeadline).length,
-        approvedTasks: done.length,
-        approvedFirstPass: done.filter((t) => t.revision === 1).length,
         donePoints: done.reduce((s, t) => s + t.points, 0),
         planPoints: planned.reduce((s, t) => s + t.points, 0),
         workDays: myWorkDates.length,
         onTimeDays: myAtt.filter((a) => a.checkIn && a.lateMinutes <= 0).length,
-        managerRating: rating?.rating ?? null,
       },
-      weights,
     );
     out.set(userId, {
       motivation,
       kpi: {
         month: m,
-        template: templateKey,
         score: kpi.score,
         components: kpi.components,
         weights: kpi.effectiveWeights,
@@ -137,7 +122,6 @@ export type Scores = {
   motivation: ReturnType<typeof computeMotivation>;
   kpi: {
     month: string;
-    template: string;
     score: number | null;
     components: Record<string, number | null>;
     weights: Record<string, number>;
@@ -197,25 +181,4 @@ export async function memberScores(ctx: Ctx, actor: ResolvedActor, userId: strin
   if (!m) throw notFound('Hodim');
   checkAccess(actor, 'kpi.view', { companyId: actor.companyId, departmentId: m.departmentId, ownerUserIds: [userId] });
   return (await scoresFor(ctx, actor.company, [userId], month)).get(userId)!;
-}
-
-export const rateInput = z.object({
-  userId: z.string().uuid(),
-  month: z.string().regex(/^\d{4}-\d{2}$/),
-  rating: z.number().min(1).max(5),
-  comment: z.string().trim().max(500).optional(),
-});
-
-export async function rateMember(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof rateInput>) {
-  const data = rateInput.parse(input);
-  const [m] = await ctx.db.select().from(memberships).where(and(eq(memberships.companyId, actor.companyId), eq(memberships.userId, data.userId)));
-  if (!m) throw notFound('Hodim');
-  checkAccess(actor, 'kpi.rate', { companyId: actor.companyId, departmentId: m.departmentId });
-  assertNotSelf(actor, 'kpi.rate', data.userId);
-  const values = { rating: data.rating, comment: data.comment ?? null, ratedBy: actor.userId };
-  await ctx.db
-    .insert(kpiRatings)
-    .values({ companyId: actor.companyId, userId: data.userId, month: data.month, ...values })
-    .onConflictDoUpdate({ target: [kpiRatings.companyId, kpiRatings.userId, kpiRatings.month], set: values });
-  await audit(ctx.db, actor, 'kpi.rate', 'membership', m.id, { month: data.month, rating: data.rating });
 }

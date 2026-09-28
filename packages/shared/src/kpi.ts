@@ -1,25 +1,18 @@
 import { DomainError } from './errors.js';
 
 /**
- * KPI = Σ wᵢ · Sᵢ over six components, each 0–100. Five come from system data; only the
- * manager rating is entered by a person. Weights are configured per department (templates
- * below). When a component has no data this month (e.g. no tasks with a plan), its weight is
- * spread proportionally over the components that do have data, so the score stays on 0–100.
+ * One KPI for everyone in the agency, measured fully automatically (no manual ratings):
+ *   deadline   — share of tasks delivered by their ORIGINAL deadline
+ *   volume     — done points / planned points (points are set by whoever assigns the task)
+ *   attendance — share of working days the person arrived on time
+ * KPI = Σ wᵢ · Sᵢ. When a component has no data this month, its weight is spread over the
+ * components that do, so the score stays on 0–100.
  */
-export const KPI_COMPONENTS = ['deadline', 'quality', 'volume', 'attendance', 'manager', 'result'] as const;
+export const KPI_COMPONENTS = ['deadline', 'volume', 'attendance'] as const;
 export type KpiComponent = (typeof KPI_COMPONENTS)[number];
 export type KpiWeights = Record<KpiComponent, number>;
 
-export const KPI_TEMPLATES = {
-  DESIGN: { deadline: 25, quality: 30, volume: 20, attendance: 10, manager: 15, result: 0 },
-  VIDEO: { deadline: 25, quality: 30, volume: 20, attendance: 10, manager: 15, result: 0 },
-  SMM: { deadline: 30, quality: 20, volume: 25, attendance: 10, manager: 15, result: 0 },
-  TARGET: { deadline: 20, quality: 0, volume: 0, attendance: 10, manager: 20, result: 50 },
-  SALES: { deadline: 15, quality: 0, volume: 0, attendance: 10, manager: 15, result: 60 },
-  PM: { deadline: 30, quality: 0, volume: 0, attendance: 10, manager: 20, result: 40 },
-  DEFAULT: { deadline: 30, quality: 25, volume: 20, attendance: 10, manager: 15, result: 0 },
-} as const satisfies Record<string, KpiWeights>;
-export type KpiTemplate = keyof typeof KPI_TEMPLATES;
+export const KPI_WEIGHTS: KpiWeights = { deadline: 50, volume: 35, attendance: 15 };
 
 export function validateWeights(w: KpiWeights): void {
   const sum = KPI_COMPONENTS.reduce((s, k) => s + w[k], 0);
@@ -31,16 +24,10 @@ export function validateWeights(w: KpiWeights): void {
 export interface KpiInputs {
   doneTasks: number;
   doneOnTime: number;
-  approvedTasks: number;
-  approvedFirstPass: number;
   donePoints: number;
   planPoints: number;
   workDays: number;
   onTimeDays: number;
-  /** 1–5, null until the manager rates the month. */
-  managerRating: number | null;
-  resultActual?: number | null;
-  resultTarget?: number | null;
 }
 
 const pct = (num: number, den: number): number | null => (den > 0 ? Math.min(100, (100 * num) / den) : null);
@@ -48,11 +35,8 @@ const pct = (num: number, den: number): number | null => (den > 0 ? Math.min(100
 export function kpiComponents(i: KpiInputs): Record<KpiComponent, number | null> {
   return {
     deadline: pct(i.doneOnTime, i.doneTasks),
-    quality: pct(i.approvedFirstPass, i.approvedTasks),
     volume: pct(i.donePoints, i.planPoints),
     attendance: pct(i.onTimeDays, i.workDays),
-    manager: i.managerRating == null ? null : Math.max(0, Math.min(5, i.managerRating)) * 20,
-    result: i.resultActual == null || i.resultTarget == null ? null : pct(i.resultActual, i.resultTarget),
   };
 }
 
@@ -64,7 +48,7 @@ export interface KpiResult {
   effectiveWeights: KpiWeights;
 }
 
-export function scoreKpi(components: Record<KpiComponent, number | null>, weights: KpiWeights): KpiResult {
+export function scoreKpi(components: Record<KpiComponent, number | null>, weights: KpiWeights = KPI_WEIGHTS): KpiResult {
   validateWeights(weights);
   const available = KPI_COMPONENTS.filter((k) => weights[k] > 0 && components[k] != null);
   const availableWeight = available.reduce((s, k) => s + weights[k], 0);
@@ -76,7 +60,7 @@ export function scoreKpi(components: Record<KpiComponent, number | null>, weight
   return { score: Math.round(exact), exact, components, effectiveWeights };
 }
 
-export function computeKpi(inputs: KpiInputs, weights: KpiWeights): KpiResult {
+export function computeKpi(inputs: KpiInputs, weights: KpiWeights = KPI_WEIGHTS): KpiResult {
   return scoreKpi(kpiComponents(inputs), weights);
 }
 

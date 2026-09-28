@@ -120,7 +120,6 @@ export interface Scores {
   motivation: Motivation;
   kpi: {
     month: string;
-    template: string;
     score: number | null;
     components: Record<string, number | null>;
     weights: Record<string, number>;

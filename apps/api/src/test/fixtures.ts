@@ -62,8 +62,8 @@ export async function agency(start = new Date('2026-09-21T05:00:00Z') /* Mon 10:
   const company = await createCompany(ctx, ceo.id, {
     name: 'Test Agency',
     departments: [
-      { name: 'Dizayn', kpiTemplate: 'DESIGN' },
-      { name: 'Video', kpiTemplate: 'VIDEO' },
+      { name: 'Dizayn' },
+      { name: 'Video' },
     ],
   });
   const actor = (userId: string) => loadActor(db, userId, company.id);
