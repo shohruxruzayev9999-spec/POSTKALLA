@@ -3,6 +3,7 @@ import { markBlocked, registerHandlers, TelegramNotifier } from './bot/bot.js';
 import { connect } from './db/client.js';
 import { buildServer } from './http/server.js';
 import { runReminders } from './jobs/reminders.js';
+import { runShootReminders } from './services/shoots.js';
 import type { Ctx } from './services/context.js';
 import { NullNotifier } from './services/notifier.js';
 
@@ -70,6 +71,8 @@ async function main() {
     try {
       const r = await runReminders(ctx);
       if (r.sent || r.skipped) app.log.info(r, 'reminders');
+      const shootsSent = await runShootReminders(ctx);
+      if (shootsSent) app.log.info({ shootsSent }, 'shoot reminders');
     } catch (e) {
       app.log.error(e, 'reminders failed');
     } finally {

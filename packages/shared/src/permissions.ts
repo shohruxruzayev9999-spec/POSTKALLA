@@ -35,6 +35,9 @@ export const ACTIONS = [
   'settings.department',
   'audit.view',
   'billing.manage',
+  'shoot.manage',
+  'onboarding.manage',
+  'report.view',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -80,6 +83,7 @@ export const PERMISSION_MATRIX: Matrix = {
     'attendance.manage': C,
     'kpi.closeMonth': C,
     'audit.view': C,
+    'onboarding.manage': C,
   },
   FINANCE: {
     ...SEE_ALL,
@@ -95,6 +99,8 @@ export const PERMISSION_MATRIX: Matrix = {
     'task.manage': C,
     'task.review': C,
     'client.manage': ['PROJECT'],
+    'shoot.manage': C,
+    'report.view': C,
   },
   PM: {
     ...SEE_ALL,
@@ -102,6 +108,8 @@ export const PERMISSION_MATRIX: Matrix = {
     'task.manage': ['PROJECT'],
     'task.review': ['PROJECT'],
     'client.manage': ['PROJECT'],
+    'shoot.manage': ['PROJECT'],
+    'report.view': ['PROJECT'],
   },
   DEPT_HEAD: {
     ...SEE_ALL,
@@ -110,6 +118,8 @@ export const PERMISSION_MATRIX: Matrix = {
     'employee.manage': ['DEPARTMENT'],
     'kpi.rate': ['DEPARTMENT'],
     'settings.department': ['DEPARTMENT'],
+    // Media/design heads plan shoots for any project.
+    'shoot.manage': C,
   },
   EMPLOYEE: {
     ...SEE_ALL,

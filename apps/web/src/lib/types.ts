@@ -190,3 +190,32 @@ export interface AttendanceMonth {
   days: AttendanceDay[];
   summary: { workDays: number; onTime: number; late: number; absent: number };
 }
+
+export interface ShootPerson {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+}
+export interface Shoot {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  day: string;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+  notes: string | null;
+  projectId: string | null;
+  project: string | null;
+  color: string;
+  crew: ShootPerson[];
+  canEdit: boolean;
+}
+export interface ShootConflict {
+  userId: string;
+  shootId: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+}

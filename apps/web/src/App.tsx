@@ -10,6 +10,7 @@ import { Attendance } from './pages/Attendance';
 import { MemberProfile } from './pages/MemberProfile';
 import { Projects } from './pages/Projects';
 import { Settings } from './pages/Settings';
+import { Shoots } from './pages/Shoots';
 import { Tasks } from './pages/Tasks';
 import { Team } from './pages/Team';
 import { Icon, Ring } from './ui/kit';
@@ -123,18 +124,31 @@ export function App() {
   );
 }
 
-const NAV = [
-  { name: 'home', label: 'Bosh', icon: 'home' },
-  { name: 'tasks', label: 'Vazifalar', icon: 'tasks' },
-  { name: 'projects', label: 'Loyihalar', icon: 'folder' },
-  { name: 'team', label: 'Jamoa', icon: 'team' },
-  { name: 'attendance', label: 'Davomat', icon: 'clock' },
+interface NavItem {
+  name: string;
+  label: string;
+  icon: string;
+  section: 'main' | 'work' | 'admin';
+  when?: (can: (a: string, s?: never) => boolean) => boolean;
+}
+
+/** Every section of the app. The sidebar shows them all; the phone tab bar shows the first four + "Ko'proq". */
+export const NAV: NavItem[] = [
+  { name: 'home', label: 'Bosh', icon: 'home', section: 'main' },
+  { name: 'tasks', label: 'Vazifalar', icon: 'tasks', section: 'main' },
+  { name: 'projects', label: 'Loyihalar', icon: 'folder', section: 'main' },
+  { name: 'team', label: 'Jamoa', icon: 'team', section: 'main' },
+  { name: 'attendance', label: 'Davomat', icon: 'clock', section: 'main' },
+  { name: 'shoots', label: 'Syomka', icon: 'camera', section: 'work' },
+  { name: 'settings', label: 'Sozlamalar', icon: 'settings', section: 'admin', when: (can) => can('settings.company') || can('settings.department') },
 ];
+const TABS = ['home', 'tasks', 'projects', 'team'];
+const SECTION_LABEL = { main: '', work: 'Ishlab chiqarish', admin: 'Boshqaruv' } as const;
 
 function Shell() {
   const route = useRoute();
   const { session, can } = useApp();
-  const nav = [...NAV, ...(can('settings.company') || can('settings.department') ? [{ name: 'settings', label: 'Sozlamalar', icon: 'settings' }] : [])];
+  const nav = NAV.filter((n) => !n.when || n.when(can as never));
   const page = (() => {
     switch (route.name) {
       case 'tasks':
@@ -147,12 +161,17 @@ function Shell() {
         return <MemberProfile userId={session.user.id} />;
       case 'attendance':
         return <Attendance />;
+      case 'shoots':
+        return <Shoots />;
       case 'settings':
         return <Settings />;
+      case 'more':
+        return <More items={nav.filter((n) => !TABS.includes(n.name))} />;
       default:
         return <Home />;
     }
   })();
+  const inMore = !TABS.includes(route.name) && route.name !== '' && route.name !== 'home';
   return (
     <div className="app">
       <aside className="sidebar">
@@ -165,21 +184,71 @@ function Shell() {
             <div className="xs muted">Retarget ERP</div>
           </div>
         </div>
-        {nav.map((n) => (
-          <button key={n.name} className={route.name === n.name ? 'on' : ''} onClick={() => go(n.name)}>
-            <Icon name={n.icon} /> {n.label}
-          </button>
-        ))}
+        {(['main', 'work', 'admin'] as const).map((sec) => {
+          const items = nav.filter((n) => n.section === sec);
+          if (!items.length) return null;
+          return (
+            <div key={sec} className="stack" style={{ gap: 4 }}>
+              {SECTION_LABEL[sec] && <div className="sidebar-sec">{SECTION_LABEL[sec]}</div>}
+              {items.map((n) => (
+                <button key={n.name} className={route.name === n.name ? 'on' : ''} onClick={() => go(n.name)}>
+                  <Icon name={n.icon} /> {n.label}
+                </button>
+              ))}
+            </div>
+          );
+        })}
       </aside>
       <main className="main">{page}</main>
       <nav className="tabbar">
-        {NAV.map((n) => (
-          <button key={n.name} className={route.name === n.name ? 'on' : ''} onClick={() => go(n.name)}>
-            <Icon name={n.icon} size={22} />
-            {n.label}
+        {nav
+          .filter((n) => TABS.includes(n.name))
+          .map((n) => (
+            <button key={n.name} className={route.name === n.name || (n.name === 'home' && !route.name) ? 'on' : ''} onClick={() => go(n.name)}>
+              <Icon name={n.icon} size={22} />
+              {n.label}
+            </button>
+          ))}
+        <button className={inMore ? 'on' : ''} onClick={() => go('more')}>
+          <Icon name="grid" size={22} />
+          Ko'proq
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+function More({ items }: { items: NavItem[] }) {
+  const { session, theme, setTheme } = useApp();
+  return (
+    <div className="stack" style={{ gap: 16 }}>
+      <h1 className="page-title">Ko'proq</h1>
+      <button className="card row" style={{ gap: 12, textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }} onClick={() => go('profile')}>
+        <Icon name="user" size={22} />
+        <div className="grow">
+          <div className="b">Mening profilim</div>
+          <div className="xs muted">KPI, davomat, vazifalar</div>
+        </div>
+        <Icon name="chevron" size={18} />
+      </button>
+      <div className="more-grid">
+        {items.map((n) => (
+          <button key={n.name} className="more-tile" onClick={() => go(n.name)}>
+            <span className="more-ic"><Icon name={n.icon} size={22} /></span>
+            <span className="b small">{n.label}</span>
           </button>
         ))}
-      </nav>
+      </div>
+      <div className="card row between">
+        <div>
+          <div className="b">Mavzu</div>
+          <div className="xs muted">{session.ctx.company.name}</div>
+        </div>
+        <div className="seg" style={{ width: 170 }}>
+          <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme('dark')}>Tungi</button>
+          <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme('light')}>Kunduzgi</button>
+        </div>
+      </div>
     </div>
   );
 }

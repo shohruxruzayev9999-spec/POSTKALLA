@@ -335,3 +335,31 @@ export const taskChecklist = pgTable(
   },
   (t) => [index('task_checklist_task_idx').on(t.taskId)],
 );
+
+/** Photo/video shoots — the "Syomka" calendar. Times are local wall-clock in the company timezone. */
+export const shoots = pgTable(
+  'shoots',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
+    /** PHOTO | VIDEO | REELS | EVENT | INTERVIEW | PODCAST */
+    type: text('type').notNull().default('VIDEO'),
+    /** PLANNING | SCHEDULED | CONFIRMED | DONE | CANCELLED */
+    status: text('status').notNull().default('SCHEDULED'),
+    day: date('day').notNull(),
+    startTime: text('start_time').notNull(),
+    endTime: text('end_time').notNull(),
+    startsAt: ts('starts_at').notNull(),
+    endsAt: ts('ends_at').notNull(),
+    location: text('location'),
+    crew: uuid('crew').array().notNull().default(sql`'{}'`),
+    notes: text('notes'),
+    remindersSent: text('reminders_sent').array().notNull().default(sql`'{}'`),
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('shoots_company_day_idx').on(t.companyId, t.day)],
+);

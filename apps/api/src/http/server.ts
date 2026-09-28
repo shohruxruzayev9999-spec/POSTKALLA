@@ -13,6 +13,7 @@ import * as org from '../services/org.js';
 import * as projects from '../services/projects.js';
 import * as tasks from '../services/tasks.js';
 import * as boards from '../services/boards.js';
+import * as shoots from '../services/shoots.js';
 
 export interface HttpConfig {
   botToken: string;
@@ -188,6 +189,14 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.post('/api/attendance/check-in', async (req) => att.checkIn(ctx, await actorOf(req), (req.body ?? {}) as never));
   app.post('/api/attendance/check-out', async (req) => att.checkOut(ctx, await actorOf(req), (req.body ?? {}) as never));
   app.get('/api/attendance/month', async (req) => att.attendanceMonth(ctx, await actorOf(req), req.query as never));
+
+  app.get('/api/shoots', async (req) => shoots.listShoots(ctx, await actorOf(req), req.query as never));
+  app.post('/api/shoots', async (req) => shoots.createShoot(ctx, await actorOf(req), req.body as never));
+  app.patch('/api/shoots/:id', async (req) => shoots.updateShoot(ctx, await actorOf(req), (req.params as { id: string }).id, req.body as never));
+  app.delete('/api/shoots/:id', async (req) => {
+    await shoots.deleteShoot(ctx, await actorOf(req), (req.params as { id: string }).id);
+    return { ok: true };
+  });
   app.get('/api/attendance', async (req) => att.listAttendance(ctx, await actorOf(req), req.query as never));
   app.put('/api/attendance', async (req) => att.editAttendance(ctx, await actorOf(req), req.body as never));
 
