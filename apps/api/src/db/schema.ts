@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   date,
@@ -61,6 +62,8 @@ export const departments = pgTable(
     kpiTemplate: text('kpi_template').notNull().default('DEFAULT'),
     headUserId: uuid('head_user_id').references(() => users.id),
     requireFileOnSubmit: boolean('require_file_on_submit').notNull().default(false),
+    /** Which department board it feeds: DESIGN, MEDIA or NONE. */
+    section: text('section').notNull().default('NONE'),
     color: text('color').notNull().default('#34D399'),
     createdAt: createdAt(),
   },
@@ -158,6 +161,12 @@ export const tasks = pgTable(
     originalDeadline: ts('original_deadline').notNull(),
     revision: integer('revision').notNull().default(1),
     points: integer('points').notNull().default(1),
+    /** Placement on a board; the status is still governed by the state machine. */
+    columnId: uuid('column_id').references((): AnyPgColumn => taskColumns.id, { onDelete: 'set null' }),
+    /** Deliverable type (Banner, Post, Reels, Story, Logo, …) and channel (Instagram, Telegram, …). */
+    format: text('format'),
+    platform: text('platform'),
+    links: text('links').array().notNull().default(sql`'{}'`),
     /** 1:1 task: visible only to its giver, assignee, reviewer and the Owner; never posted to a group. */
     isPrivate: boolean('is_private').notNull().default(false),
     completedAt: ts('completed_at'),
@@ -281,4 +290,45 @@ export const auditLog = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index('audit_company_idx').on(t.companyId, t.createdAt)],
+);
+
+/** Kanban columns. Each board (main, DESIGN, MEDIA) has its own set; every column sits inside a status. */
+export const taskColumns = pgTable(
+  'task_columns',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    board: text('board').notNull().default('main'),
+    name: text('name').notNull(),
+    status: text('status').notNull(),
+    position: integer('position').notNull().default(0),
+    color: text('color').notNull().default('#34D399'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('task_columns_company_board_idx').on(t.companyId, t.board)],
+);
+
+export const taskComments = pgTable(
+  'task_comments',
+  {
+    id: id(),
+    taskId: uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id),
+    body: text('body').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('task_comments_task_idx').on(t.taskId)],
+);
+
+export const taskChecklist = pgTable(
+  'task_checklist',
+  {
+    id: id(),
+    taskId: uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+    text: text('text').notNull(),
+    done: boolean('done').notNull().default(false),
+    position: integer('position').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index('task_checklist_task_idx').on(t.taskId)],
 );

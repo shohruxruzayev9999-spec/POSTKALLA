@@ -12,6 +12,7 @@ import { loadActor, type Ctx, type ResolvedActor } from '../services/context.js'
 import * as org from '../services/org.js';
 import * as projects from '../services/projects.js';
 import * as tasks from '../services/tasks.js';
+import * as boards from '../services/boards.js';
 
 export interface HttpConfig {
   botToken: string;
@@ -149,6 +150,38 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
       .object({ action: z.enum(['START', 'BLOCK', 'SUBMIT', 'APPROVE', 'RETURN', 'REOPEN', 'CANCEL']), comment: z.string().max(2000).optional() })
       .parse(req.body);
     return tasks.actOnTask(ctx, await actorOf(req), idParam.parse(req.params).id, body.action as TaskAction, body.comment);
+  });
+
+  // ---------------------------------------------------------------- boards, comments, checklist
+  app.get('/api/boards/:board/columns', async (req) => boards.listColumns(ctx, await actorOf(req), (req.params as { board: string }).board));
+  app.post('/api/boards/:board/columns', async (req) => boards.createColumn(ctx, await actorOf(req), (req.params as { board: string }).board, req.body as never));
+  app.put('/api/boards/:board/order', async (req) =>
+    boards.reorderColumns(ctx, await actorOf(req), (req.params as { board: string }).board, z.object({ ids: z.array(z.string().uuid()).max(20) }).parse(req.body).ids),
+  );
+  app.patch('/api/columns/:id', async (req) => boards.updateColumn(ctx, await actorOf(req), idParam.parse(req.params).id, req.body as never));
+  app.delete('/api/columns/:id', async (req) => {
+    await boards.deleteColumn(ctx, await actorOf(req), idParam.parse(req.params).id);
+    return { ok: true };
+  });
+  app.post('/api/tasks/:id/move', async (req) => {
+    const body = z.object({ columnId: z.string().uuid(), comment: z.string().max(2000).optional() }).parse(req.body);
+    return boards.moveTask(ctx, await actorOf(req), idParam.parse(req.params).id, body.columnId, body.comment);
+  });
+  app.post('/api/tasks/:id/comments', async (req) =>
+    boards.addComment(ctx, await actorOf(req), idParam.parse(req.params).id, z.object({ body: z.string() }).parse(req.body).body),
+  );
+  app.post('/api/tasks/:id/checklist', async (req) =>
+    boards.addChecklistItem(ctx, await actorOf(req), idParam.parse(req.params).id, z.object({ text: z.string() }).parse(req.body).text),
+  );
+  const itemParams = z.object({ id: z.string().uuid(), itemId: z.string().uuid() });
+  app.patch('/api/tasks/:id/checklist/:itemId', async (req) => {
+    const p = itemParams.parse(req.params);
+    return boards.updateChecklistItem(ctx, await actorOf(req), p.id, p.itemId, req.body as never);
+  });
+  app.delete('/api/tasks/:id/checklist/:itemId', async (req) => {
+    const p = itemParams.parse(req.params);
+    await boards.deleteChecklistItem(ctx, await actorOf(req), p.id, p.itemId);
+    return { ok: true };
   });
 
   app.get('/api/attendance/today', async (req) => att.today(ctx, await actorOf(req)));

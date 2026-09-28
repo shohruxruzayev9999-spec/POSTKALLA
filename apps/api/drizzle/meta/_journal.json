@@ -15,6 +15,13 @@
       "when": 1790626179144,
       "tag": "0001_private_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790627502610,
+      "tag": "0002_boards",
+      "breakpoints": true
     }
   ]
 }

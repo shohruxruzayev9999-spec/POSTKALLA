@@ -18,6 +18,7 @@ import type { Db } from '../db/client.js';
 import { departments, memberships, projects, taskEvents, taskFiles, tasks, users } from '../db/schema.js';
 import { notFound, type Ctx, type ResolvedActor } from './context.js';
 import type { TaskCard } from './notifier.js';
+import { cardCounts, listChecklist, listComments } from './boards.js';
 
 export type TaskRow = typeof tasks.$inferSelect;
 
@@ -66,6 +67,10 @@ export const createTaskInput = z.object({
   priority: z.enum(TASK_PRIORITIES).default('MEDIUM'),
   points: z.number().int().min(1).max(20).default(1),
   isPrivate: z.boolean().default(false),
+  format: z.string().trim().max(40).nullable().optional(),
+  platform: z.string().trim().max(40).nullable().optional(),
+  links: z.array(z.string().trim().url().max(500)).max(5).default([]),
+  columnId: z.string().uuid().nullable().optional(),
 });
 
 export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>) {
@@ -125,6 +130,10 @@ export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<
         priority: data.priority,
         points: data.points,
         isPrivate: data.isPrivate,
+        format: data.format ?? null,
+        platform: data.platform ?? null,
+        links: data.links,
+        columnId: data.columnId ?? null,
         deadline: data.deadline,
         originalDeadline: data.deadline,
         createdAt: ctx.now(),
@@ -175,6 +184,9 @@ export async function actOnTask(ctx: Ctx, actor: ResolvedActor, taskId: string, 
       .set({
         status: result.status,
         revision: result.revision,
+        // The card leaves its column when the status changes; the board shows it in the first
+        // column of the new status (or wherever moveTask puts it).
+        columnId: result.status === t!.status ? t!.columnId : null,
         completedAt: result.status === 'DONE' ? now : action === 'REOPEN' ? null : t!.completedAt,
         updatedAt: now,
       })
@@ -200,6 +212,9 @@ export const updateTaskInput = z.object({
   assigneeUserId: z.string().uuid().optional(),
   reviewerUserId: z.string().uuid().nullable().optional(),
   reason: z.string().trim().max(500).optional(),
+  format: z.string().trim().max(40).nullable().optional(),
+  platform: z.string().trim().max(40).nullable().optional(),
+  links: z.array(z.string().trim().url().max(500)).max(5).optional(),
 });
 
 export async function updateTask(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof updateTaskInput>) {
@@ -210,7 +225,11 @@ export async function updateTask(ctx: Ctx, actor: ResolvedActor, taskId: string,
   // The assignee may edit the wording of a task they created for themself, but only a manager
   // moves deadlines or re-assigns — otherwise the motivation score could be gamed.
   const sensitive = data.deadline || data.assigneeUserId || data.reviewerUserId !== undefined || data.points || data.priority;
-  if (sensitive ? !manager : !(manager || isCreator)) throw new DomainError('FORBIDDEN', "Bu vazifani o'zgartirishga ruxsat yo'q");
+  // Links, format and platform are working material — the assignee may maintain them too.
+  const onlyMaterial = Object.keys(data).every((k) => ['links', 'format', 'platform'].includes(k));
+  const isAssignee = t.assigneeUserId === actor.userId;
+  const allowed = sensitive ? manager : manager || isCreator || (onlyMaterial && isAssignee);
+  if (!allowed) throw new DomainError('FORBIDDEN', "Bu vazifani o'zgartirishga ruxsat yo'q");
   if (data.deadline && !data.reason) throw new DomainError('COMMENT_REQUIRED', 'Deadline o\'zgarishi sababini yozing');
   if ((data.assigneeUserId && data.assigneeUserId === (data.reviewerUserId ?? t.reviewerUserId)) || (data.reviewerUserId && data.reviewerUserId === (data.assigneeUserId ?? t.assigneeUserId))) {
     throw new DomainError('VALIDATION', "Ijrochi o'zini tekshira olmaydi");
@@ -256,6 +275,8 @@ export const listTasksInput = z.object({
   assigneeUserId: z.string().uuid().optional(),
   mine: z.coerce.boolean().optional(),
   includeClosed: z.coerce.boolean().optional(),
+  /** Department board: only tasks of departments in this section. */
+  section: z.enum(['DESIGN', 'MEDIA']).optional(),
 });
 
 export async function listTasks(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof listTasksInput> = {}) {
@@ -266,6 +287,14 @@ export async function listTasks(ctx: Ctx, actor: ResolvedActor, input: z.input<t
   if (f.projectId) conds.push(eq(tasks.projectId, f.projectId));
   if (f.departmentId) conds.push(eq(tasks.departmentId, f.departmentId));
   if (f.assigneeUserId) conds.push(eq(tasks.assigneeUserId, f.assigneeUserId));
+  if (f.section) {
+    const secDeps = await ctx.db
+      .select({ id: departments.id })
+      .from(departments)
+      .where(and(eq(departments.companyId, actor.companyId), eq(departments.section, f.section)));
+    if (!secDeps.length) return [];
+    conds.push(inArray(tasks.departmentId, secDeps.map((d) => d.id)));
+  }
   if (f.mine) conds.push(or(eq(tasks.assigneeUserId, actor.userId), eq(tasks.reviewerUserId, actor.userId))!);
   if (!f.includeClosed && !f.status) {
     // Closed tasks only from the last 14 days keep the board light.
@@ -279,10 +308,12 @@ export async function listTasks(ctx: Ctx, actor: ResolvedActor, input: z.input<t
     .where(and(...conds))
     .orderBy(asc(tasks.deadline))
     .limit(1000);
-  return rows
-    .filter((r) => canSeeTask(actor, r.t))
+  const visible = rows.filter((r) => canSeeTask(actor, r.t));
+  const counts = await cardCounts(ctx.db, visible.map((r) => r.t.id));
+  return visible
     .map((r) => ({
       ...r.t,
+      ...counts.get(r.t.id)!,
       project: r.project,
       projectColor: r.projectColor,
       assignee: { id: r.a.id, name: displayName(r.a), photoUrl: r.a.photoUrl },
@@ -306,8 +337,12 @@ export async function getTask(ctx: Ctx, actor: ResolvedActor, taskId: string) {
   const [dep] = t.departmentId ? await ctx.db.select().from(departments).where(eq(departments.id, t.departmentId)) : [];
   const card = await taskCard(ctx.db, taskId);
   const currentFiles = files.filter((f) => f.revision === t.revision).length;
+  const comments = await listComments(ctx.db, taskId);
+  const checklist = await listChecklist(ctx.db, taskId);
   return {
     ...t,
+    comments: comments.map((c) => ({ ...c, name: [c.firstName, c.lastName].filter(Boolean).join(' ') })),
+    checklist,
     project: card.projectName,
     assignee: card.assignee,
     reviewer: card.reviewer,

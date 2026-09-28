@@ -58,6 +58,19 @@ const RULES: Record<TaskAction, Rule> = {
   CANCEL: { from: ['NEW', 'IN_PROGRESS', 'REVIEW', 'RETURNED', 'BLOCKED'], to: 'CANCELLED', who: (r) => r.canManage },
 };
 
+/** Where each action leads. */
+export function actionTarget(action: TaskAction): TaskStatus {
+  return RULES[action].to;
+}
+
+/**
+ * Dragging a card to a column of another status is the same as pressing the button that leads
+ * there — so it obeys exactly the same rules. Returns null when no allowed action reaches `to`.
+ */
+export function actionToReach(input: TaskTransitionInput, to: TaskStatus, rel: TaskActorRelation): TaskAction | null {
+  return allowedActions(input, rel).find((a) => RULES[a].to === to) ?? null;
+}
+
 export function allowedActions(input: TaskTransitionInput, rel: TaskActorRelation): TaskAction[] {
   return (Object.keys(RULES) as TaskAction[]).filter((a) => {
     const rule = RULES[a];

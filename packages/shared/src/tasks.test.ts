@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowedActions, applyTaskAction, type TaskActorRelation, type TaskTransitionInput } from './tasks.js';
+import { actionToReach, allowedActions, applyTaskAction, type TaskActorRelation, type TaskTransitionInput } from './tasks.js';
 
 const assignee: TaskActorRelation = { isAssignee: true, isReviewer: false, canReview: false, canManage: false };
 const reviewer: TaskActorRelation = { isAssignee: false, isReviewer: true, canReview: false, canManage: false };
@@ -49,5 +49,13 @@ describe('task lifecycle', () => {
   it('offers the right buttons for each person', () => {
     expect(allowedActions(task('IN_PROGRESS'), assignee)).toEqual(['BLOCK', 'SUBMIT']);
     expect(allowedActions(task('REVIEW'), reviewer)).toEqual(['APPROVE', 'RETURN']);
+  });
+
+  it('maps a drag between columns to the matching action', () => {
+    expect(actionToReach(task('NEW'), 'IN_PROGRESS', assignee)).toBe('START');
+    expect(actionToReach(task('IN_PROGRESS'), 'REVIEW', assignee)).toBe('SUBMIT');
+    expect(actionToReach(task('REVIEW'), 'DONE', assignee)).toBeNull(); // no self-approval by dragging either
+    expect(actionToReach(task('REVIEW'), 'DONE', reviewer)).toBe('APPROVE');
+    expect(actionToReach(task('NEW'), 'DONE', reviewer)).toBeNull();
   });
 });

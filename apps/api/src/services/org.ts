@@ -46,7 +46,7 @@ export async function createCompany(ctx: Ctx, userId: string, input: z.input<typ
     const [company] = await tx.insert(companies).values({ name: data.name }).returning();
     await tx.insert(memberships).values({ companyId: company!.id, userId, roles: ['OWNER'], position: 'CEO', joinedAt: ctx.now() });
     if (data.departments.length) {
-      await tx.insert(departments).values(data.departments.map((d) => ({ companyId: company!.id, name: d.name })));
+      await tx.insert(departments).values(data.departments.map((d) => ({ companyId: company!.id, name: d.name, section: detectSection(d.name) })));
     }
     await audit(tx as unknown as Db, { userId, companyId: company!.id }, 'company.create', 'company', company!.id);
     return company!;
@@ -103,7 +103,15 @@ export async function updateCompany(ctx: Ctx, actor: ResolvedActor, input: z.inp
 // Departments
 // ------------------------------------------------------------------------------------------
 
+/** Department boards: a name that sounds like design or video lands on that board by default. */
+export function detectSection(name: string): 'DESIGN' | 'MEDIA' | 'NONE' {
+  if (/(dizayn|design)/i.test(name)) return 'DESIGN';
+  if (/(video|montaj|media|mobilograf|edit)/i.test(name)) return 'MEDIA';
+  return 'NONE';
+}
+
 export const departmentInput = z.object({
+  section: z.enum(['DESIGN', 'MEDIA', 'NONE']).optional(),
   name: z.string().trim().min(1).max(60),
   headUserId: z.string().uuid().nullable().optional(),
   requireFileOnSubmit: z.boolean().optional(),
@@ -130,7 +138,7 @@ export async function createDepartment(ctx: Ctx, actor: ResolvedActor, input: z.
   checkAccess(actor, 'settings.company', { companyId: actor.companyId });
   const data = departmentInput.parse(input);
   if (data.headUserId) await assertMember(ctx.db, actor.companyId, data.headUserId);
-  const [d] = await ctx.db.insert(departments).values({ ...data, companyId: actor.companyId }).returning();
+  const [d] = await ctx.db.insert(departments).values({ ...data, section: data.section ?? detectSection(data.name), companyId: actor.companyId }).returning();
   if (data.headUserId) await ensureRole(ctx.db, actor.companyId, data.headUserId, 'DEPT_HEAD');
   await audit(ctx.db, actor, 'department.create', 'department', d!.id, data);
   return d!;
