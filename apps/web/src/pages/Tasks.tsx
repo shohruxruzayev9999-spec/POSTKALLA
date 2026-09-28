@@ -55,11 +55,12 @@ export function FilterBar({ f, setF, hideDepartment }: { f: TaskFilters; setF: (
   const active = [f.projectId, f.assigneeUserId, f.departmentId, f.onlyPrivate].filter(Boolean).length;
   const sel = { minHeight: 40, padding: '8px 10px', fontSize: 13, width: 'auto', maxWidth: 190 } as const;
   return (
-    <div className="row wrap" style={{ gap: 8 }}>
-      <div style={{ position: 'relative', flex: '1 1 200px' }}>
+    <div className="filterbar">
+      <div className="filterbar-search">
         <input className="input" style={{ minHeight: 40, paddingLeft: 36 }} placeholder="Qidirish…" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
         <span className="faint" style={{ position: 'absolute', left: 11, top: 10 }}><Icon name="search" size={18} /></span>
       </div>
+      <div className="filterbar-chips">
       <select className="input" style={sel} value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })} aria-label="Loyiha">
         <option value="">Barcha loyihalar</option>
         {(projects.data ?? []).map((p) => (
@@ -84,6 +85,7 @@ export function FilterBar({ f, setF, hideDepartment }: { f: TaskFilters; setF: (
       {active > 0 && (
         <button className="btn sm ghost" onClick={() => setF({ ...EMPTY_FILTERS, q: f.q })}>Tozalash</button>
       )}
+      </div>
     </div>
   );
 }
@@ -131,7 +133,7 @@ export function Tasks({ openId }: { openId?: string }) {
           <button className={!mine ? 'on' : ''} onClick={() => setMine(false)}>Hammasi</button>
           <button className={mine ? 'on' : ''} onClick={() => setMine(true)}>Meniki</button>
         </div>
-        <div className="grow"><FilterBar f={f} setF={setF} /></div>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}><FilterBar f={f} setF={setF} /></div>
       </div>
 
       {tasks.isPending ? (

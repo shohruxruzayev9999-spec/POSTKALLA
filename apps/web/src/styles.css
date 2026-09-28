@@ -137,6 +137,16 @@ h1, h2, h3 { margin: 0; }
 .btn.ghost { background: transparent; border-color: transparent; }
 .btn.sm { height: 34px; padding: 0 12px; border-radius: 11px; font-size: 13px; }
 .btn.block { width: 100%; }
+.btn.icon-btn, .icon-btn { padding: 0; flex-shrink: 0; }
+.filterbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.filterbar-search { position: relative; flex: 1 1 220px; min-width: 0; }
+.filterbar-chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.filterbar-chips > * { flex-shrink: 0; }
+@media (max-width: 899px) {
+  .filterbar-search { flex-basis: 100%; }
+  .filterbar-chips { flex-wrap: nowrap; overflow-x: auto; width: calc(100% + 32px); margin: 0 -16px; padding: 0 16px 2px; scrollbar-width: none; }
+  .filterbar-chips::-webkit-scrollbar { display: none; }
+}
 .icon-btn { width: 44px; height: 44px; padding: 0; border-radius: 14px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
