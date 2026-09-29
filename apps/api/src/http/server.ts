@@ -15,6 +15,7 @@ import * as tasks from '../services/tasks.js';
 import * as boards from '../services/boards.js';
 import * as shoots from '../services/shoots.js';
 import * as finance from '../services/finance.js';
+import * as onboarding from '../services/onboarding.js';
 
 export interface HttpConfig {
   botToken: string;
@@ -201,6 +202,21 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   });
   app.get('/api/finance/rows/:id/history', async (req) => finance.rowHistory(ctx, await actorOf(req), (req.params as { id: string }).id));
   app.post('/api/finance/copy', async (req) => finance.copyMonth(ctx, await actorOf(req), req.body as never));
+
+  app.get('/api/onboarding', async (req) => onboarding.listDocs(ctx, await actorOf(req)));
+  app.post('/api/onboarding', async (req) => onboarding.createDoc(ctx, await actorOf(req), req.body as never));
+  app.post('/api/onboarding/starter', async (req) => onboarding.createStarterKit(ctx, await actorOf(req)));
+  app.put('/api/onboarding/order', async (req) => {
+    await onboarding.reorderDocs(ctx, await actorOf(req), (req.body as { ids: string[] }).ids ?? []);
+    return { ok: true };
+  });
+  app.get('/api/onboarding/:id', async (req) => onboarding.getDoc(ctx, await actorOf(req), (req.params as { id: string }).id));
+  app.patch('/api/onboarding/:id', async (req) => onboarding.updateDoc(ctx, await actorOf(req), (req.params as { id: string }).id, req.body as never));
+  app.delete('/api/onboarding/:id', async (req) => {
+    await onboarding.deleteDoc(ctx, await actorOf(req), (req.params as { id: string }).id);
+    return { ok: true };
+  });
+  app.post('/api/onboarding/:id/ack', async (req) => onboarding.acknowledge(ctx, await actorOf(req), (req.params as { id: string }).id));
 
   app.get('/api/shoots', async (req) => shoots.listShoots(ctx, await actorOf(req), req.query as never));
   app.post('/api/shoots', async (req) => shoots.createShoot(ctx, await actorOf(req), req.body as never));

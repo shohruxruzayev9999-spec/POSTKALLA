@@ -400,3 +400,31 @@ select.fin-cell { cursor: pointer; }
 .fs-unpaid { background: var(--surface-2); color: var(--muted); }
 .fin-add { display: flex; align-items: center; gap: 6px; width: 100%; height: 44px; padding: 0 16px; border: 0; background: none; color: var(--muted); font: inherit; font-weight: 700; cursor: pointer; }
 .fin-add:hover { color: var(--text); background: var(--surface-2); }
+
+/* ---------- Onboarding */
+.tag.ok { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: transparent; }
+.tag.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: transparent; }
+.ob-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.ob-card { display: flex; flex-direction: column; padding: 0; overflow: hidden; text-align: left; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; transition: transform .12s, border-color .12s; }
+.ob-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.ob-cover { height: 86px; display: grid; place-items: center; background: radial-gradient(120% 140% at 20% 0%, color-mix(in srgb, var(--c) 55%, transparent), color-mix(in srgb, var(--c) 12%, transparent)); }
+.ob-cover span { font-size: 38px; filter: drop-shadow(0 4px 10px rgba(0,0,0,.25)); }
+.ob-head { display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: 20px; background: linear-gradient(140deg, color-mix(in srgb, var(--c) 30%, transparent), color-mix(in srgb, var(--c) 6%, transparent)); }
+.ob-emoji { font-size: 40px; line-height: 1; }
+.ob-body { max-width: 720px; }
+.ob-h { margin: 8px 0 0; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+.ob-p { margin: 0; line-height: 1.6; white-space: pre-wrap; }
+.ob-callout { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; line-height: 1.5; background: color-mix(in srgb, var(--info) 12%, transparent); border: 1px solid color-mix(in srgb, var(--info) 30%, transparent); }
+.ob-callout.warn { background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.ob-callout.good { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.ob-check { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ob-check.on span:last-child { color: var(--muted); text-decoration: line-through; }
+.ob-box { width: 20px; height: 20px; flex-shrink: 0; border-radius: 6px; border: 2px solid var(--line-strong); display: grid; place-items: center; color: var(--on-accent); }
+.ob-check.on .ob-box { background: var(--grad); border-color: transparent; }
+.ob-link { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); text-decoration: none; }
+.ob-video { position: relative; padding-top: 56.25%; border-radius: 14px; overflow: hidden; background: #000; }
+.ob-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.ob-hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+.ob-ack { position: sticky; bottom: 0; padding: 12px 0 4px; background: linear-gradient(to top, var(--surface-solid) 70%, transparent); }
+.ob-edit { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 16px; border: 1px dashed var(--line-strong); background: color-mix(in srgb, var(--surface-2) 50%, transparent); }
+.ob-add-menu { display: flex; flex-wrap: wrap; gap: 6px; }

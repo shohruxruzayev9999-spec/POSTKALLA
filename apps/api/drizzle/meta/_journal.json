@@ -43,6 +43,13 @@
       "when": 1790629971995,
       "tag": "0005_finance",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790630616908,
+      "tag": "0006_onboarding",
+      "breakpoints": true
     }
   ]
 }

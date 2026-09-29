@@ -391,3 +391,37 @@ export const financeRows = pgTable(
   },
   (t) => [index('finance_rows_company_month_idx').on(t.companyId, t.month)],
 );
+
+/** Onboarding handbook: documents made of blocks; each member confirms "Tanishdim" per version. */
+export const onboardingDocs = pgTable(
+  'onboarding_docs',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    emoji: text('emoji').notNull().default('📘'),
+    color: text('color').notNull().default('#34D399'),
+    /** [{ id, type: heading|text|callout|checklist|link|video|divider, text, items?, url?, tone? }] */
+    blocks: jsonb('blocks').$type<Array<Record<string, unknown>>>().notNull().default([]),
+    /** Empty = everyone; otherwise only members of these departments. */
+    departmentIds: uuid('department_ids').array().notNull().default(sql`'{}'`),
+    published: boolean('published').notNull().default(false),
+    version: integer('version').notNull().default(1),
+    position: integer('position').notNull().default(0),
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('onboarding_docs_company_idx').on(t.companyId)],
+);
+
+export const onboardingAcks = pgTable(
+  'onboarding_acks',
+  {
+    docId: uuid('doc_id').notNull().references(() => onboardingDocs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    ackedAt: ts('acked_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.docId, t.userId] })],
+);

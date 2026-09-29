@@ -19,6 +19,8 @@ export function Home() {
   const overdue = open.filter((t) => t.overdue);
   const next = open.filter((t) => !t.overdue).sort((a, b) => +new Date(a.deadline) - +new Date(b.deadline))[0];
   const others = session.companies.filter((c) => c.id !== session.ctx.company.id && c.status === 'ACTIVE');
+  const docs = useQuery({ queryKey: ['onboarding'], queryFn: () => api<Array<{ id: string; forMe: boolean; acked: boolean }>>('/onboarding') });
+  const toRead = (docs.data ?? []).filter((d) => d.forMe && !d.acked);
 
   return (
     <div className="stack" style={{ gap: 14 }}>
@@ -44,6 +46,17 @@ export function Home() {
           </button>
         </div>
       </header>
+
+      {toRead.length > 0 && (
+        <button className="card row click" style={{ gap: 12, textAlign: 'left', font: 'inherit', color: 'inherit', borderColor: 'color-mix(in srgb, var(--warn) 40%, transparent)' }} onClick={() => go('onboarding', toRead.length === 1 ? toRead[0]!.id : undefined)}>
+          <span style={{ fontSize: 24 }}>📘</span>
+          <div className="grow">
+            <div className="b">Onboarding: {toRead.length} ta hujjat o‘qilmagan</div>
+            <div className="xs muted">O‘qib chiqib, «Tanishdim» ni bosing</div>
+          </div>
+          <Icon name="chevron" size={18} />
+        </button>
+      )}
 
       <div className="grid desk-2" style={{ alignItems: 'start' }}>
         <div className="stack" style={{ gap: 14 }}>
