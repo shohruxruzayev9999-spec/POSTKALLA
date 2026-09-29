@@ -13,7 +13,9 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@types/fontkit": "^2.0.9",
     "@types/node": "^22.20.4",
+    "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15",
@@ -26,8 +28,10 @@
     "@retarget/shared": "0.1.0",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
+    "fontkit": "^2.0.4",
     "grammy": "^1.46.0",
     "jose": "^6.2.12",
+    "pdfkit": "^0.20.2",
     "pg": "^8.23.0",
     "zod": "^4.6.5"
   }

@@ -5,7 +5,7 @@ import { dateShort } from '../lib/format';
 import { useMembers, useProjects } from '../lib/queries';
 import type { Project } from '../lib/types';
 import { Empty, Field, Icon, Ring, Sheet, Skeleton } from '../ui/kit';
-import { useApp } from '../ui/state';
+import { go, useApp } from '../ui/state';
 import { TaskForm } from './Tasks';
 
 const COLORS = ['#34D399', '#A3E635', '#14B8A6', '#60A5FA', '#A78BFA', '#F472B6', '#FB923C', '#FACC15'];
@@ -101,6 +101,9 @@ function ProjectCard({ p, onEdit, onTask }: { p: Project; onEdit: () => void; on
             <Icon name="plus" size={15} /> Vazifa
           </button>
         )}
+        <button className="btn sm grow" onClick={() => go('reports', p.id)}>
+          <Icon name="report" size={15} /> Hisobot
+        </button>
         {manage && (
           <button className="btn sm grow" onClick={onEdit}>
             Sozlash

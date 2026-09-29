@@ -6,6 +6,7 @@ import { runReminders } from './jobs/reminders.js';
 import { runShootReminders } from './services/shoots.js';
 import type { Ctx } from './services/context.js';
 import { NullNotifier } from './services/notifier.js';
+import { anthropicClient } from './services/ai.js';
 
 function env(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
@@ -38,7 +39,8 @@ async function main() {
   if (bot) await bot.init();
   const botUsername = bot ? bot.botInfo.username : 'dev_bot';
 
-  const ctx: Ctx = { db, now: () => new Date(), notifier: new NullNotifier() };
+  const ai = process.env.ANTHROPIC_API_KEY ? anthropicClient(process.env.ANTHROPIC_API_KEY, process.env.AI_MODEL || undefined) : undefined;
+  const ctx: Ctx = { db, now: () => new Date(), notifier: new NullNotifier(), ai };
   if (bot) {
     ctx.notifier = new TelegramNotifier(bot.api, botUsername, (id) => markBlocked(ctx, id));
     registerHandlers(bot, ctx, botUsername);

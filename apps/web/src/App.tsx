@@ -14,6 +14,7 @@ import { Shoots } from './pages/Shoots';
 import { Section } from './pages/Section';
 import { Finance } from './pages/Finance';
 import { OnboardingDocs } from './pages/OnboardingDocs';
+import { Reports } from './pages/Reports';
 import { Tasks } from './pages/Tasks';
 import { Team } from './pages/Team';
 import { Icon, Ring } from './ui/kit';
@@ -145,6 +146,7 @@ export const NAV: NavItem[] = [
   { name: 'design', label: 'Dizayn', icon: 'palette', section: 'work' },
   { name: 'media', label: 'Media', icon: 'film', section: 'work' },
   { name: 'shoots', label: 'Syomka', icon: 'camera', section: 'work' },
+  { name: 'reports', label: 'Hisobotlar', icon: 'report', section: 'admin' },
   { name: 'onboarding', label: 'Onboarding', icon: 'book', section: 'admin' },
   { name: 'finance', label: 'Moliya', icon: 'wallet', section: 'admin', when: (can) => can('finance.view') },
   { name: 'settings', label: 'Sozlamalar', icon: 'settings', section: 'admin', when: (can) => can('settings.company') || can('settings.department') },
@@ -176,6 +178,8 @@ function Shell() {
         return <Section key="media" section="MEDIA" openId={route.id} />;
       case 'finance':
         return <Finance />;
+      case 'reports':
+        return <Reports key={route.id ?? 'all'} projectId={route.id} />;
       case 'onboarding':
         return <OnboardingDocs openId={route.id} />;
       case 'settings':

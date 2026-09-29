@@ -48,6 +48,8 @@ export interface Notifier {
   taskChanged(card: TaskCard, action: TaskAction, actorName: string, comment: string | null): Promise<void>;
   sendReminder(d: ReminderDelivery): Promise<SentMessage[]>;
   direct(telegramId: number, text: string): Promise<void>;
+  /** Send a file (a PDF report) to a person's private chat. */
+  sendDocument(telegramId: number, file: Uint8Array, fileName: string, caption: string): Promise<void>;
 }
 
 export class NullNotifier implements Notifier {
@@ -59,4 +61,5 @@ export class NullNotifier implements Notifier {
     return [];
   }
   async direct(): Promise<void> {}
+  async sendDocument(): Promise<void> {}
 }

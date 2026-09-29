@@ -28,6 +28,9 @@ services:
       WEBAPP_URL: https://${DOMAIN}
       CORS_ORIGINS: https://${DOMAIN}
       NODE_ENV: production
+      # Optional: enables AI summaries and the daily AI digest.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
     mem_limit: 350m
   backup:
     image: postgres:16-alpine

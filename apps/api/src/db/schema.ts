@@ -425,3 +425,30 @@ export const onboardingAcks = pgTable(
   },
   (t) => [primaryKey({ columns: [t.docId, t.userId] })],
 );
+
+/**
+ * Messages from project Telegram groups (the bot must be an admin, or have privacy mode off).
+ * Used for project reports: activity, client requests, links and files.
+ */
+export const chatMessages = pgTable(
+  'chat_messages',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    chatId: bigint('chat_id', { mode: 'number' }).notNull(),
+    messageId: integer('message_id').notNull(),
+    fromTelegramId: bigint('from_telegram_id', { mode: 'number' }),
+    fromName: text('from_name').notNull().default(''),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Sender was a member of the company when the message came in (otherwise: client side). */
+    isTeam: boolean('is_team').notNull().default(false),
+    /** TEXT | PHOTO | VIDEO | DOCUMENT | VOICE | OTHER */
+    kind: text('kind').notNull().default('TEXT'),
+    text: text('text').notNull().default(''),
+    fileName: text('file_name'),
+    sentAt: ts('sent_at').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('chat_messages_uq').on(t.chatId, t.messageId), index('chat_messages_project_idx').on(t.projectId, t.sentAt)],
+);

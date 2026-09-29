@@ -13,8 +13,9 @@ if [ ! -f .env ]; then
   printf 'DB_PASSWORD=%s\nJWT_SECRET=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env
 fi
 BOT_TOKEN="$(cat .bot_token)"; rm -f .bot_token
-grep -v -E '^(BOT_TOKEN|DOMAIN)=' .env > .env.tmp || true
-printf 'BOT_TOKEN=%s\nDOMAIN=%s\n' "$BOT_TOKEN" "$DOMAIN" >> .env.tmp
+AI_KEY=""; if [ -s .ai_key ]; then AI_KEY="$(cat .ai_key)"; fi; rm -f .ai_key
+grep -v -E '^(BOT_TOKEN|DOMAIN|ANTHROPIC_API_KEY)=' .env > .env.tmp || true
+printf 'BOT_TOKEN=%s\nDOMAIN=%s\nANTHROPIC_API_KEY=%s\n' "$BOT_TOKEN" "$DOMAIN" "$AI_KEY" >> .env.tmp
 mv .env.tmp .env && chmod 600 .env
 
 # 2. Containers

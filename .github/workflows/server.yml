@@ -60,6 +60,7 @@ jobs:
           HOST: ${{ secrets.SSH_HOST }}
           USER: ${{ secrets.SSH_USER }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           mkdir -p ~/.ssh && echo "$SSH_KEY" > ~/.ssh/key && chmod 600 ~/.ssh/key
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
@@ -68,4 +69,5 @@ jobs:
           scp -i ~/.ssh/key /tmp/postkalla-api.tar.gz /tmp/postkalla-web.tar.gz "$USER@$HOST:/tmp/"
           scp -i ~/.ssh/key deploy/compose.shared.yml deploy/remote-deploy.sh "$USER@$HOST:postkalla/"
           printf '%s' "$BOT_TOKEN" | $S 'umask 077; cat > ~/postkalla/.bot_token'
+          printf '%s' "$ANTHROPIC_API_KEY" | $S 'umask 077; cat > ~/postkalla/.ai_key'
           $S "bash ~/postkalla/remote-deploy.sh $DOMAIN"

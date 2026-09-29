@@ -13,6 +13,7 @@ export class RecordingNotifier implements Notifier {
   reminders: ReminderDelivery[] = [];
   deleted: Array<{ chatId: number; messageId: number }> = [];
   dms: Array<{ telegramId: number; text: string }> = [];
+  documents: Array<{ telegramId: number; fileName: string; caption: string; bytes: number }> = [];
   private nextId = 100;
 
   async upsertTaskCard(card: TaskCard): Promise<SentMessage | null> {
@@ -31,6 +32,9 @@ export class RecordingNotifier implements Notifier {
   }
   async direct(telegramId: number, text: string) {
     this.dms.push({ telegramId, text });
+  }
+  async sendDocument(telegramId: number, file: Uint8Array, fileName: string, caption: string) {
+    this.documents.push({ telegramId, fileName, caption, bytes: file.byteLength });
   }
 }
 

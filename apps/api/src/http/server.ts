@@ -3,7 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import { ACTIONS, DomainError, ROLES, scopesFor, type TaskAction } from '@retarget/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
-import { findUserByTelegram, issueToken, upsertTelegramUser, verifyInitData, verifyToken } from '../auth/telegram.js';
+import { findUserByTelegram, issuePurposeToken, issueToken, upsertTelegramUser, verifyInitData, verifyPurposeToken, verifyToken } from '../auth/telegram.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import * as analytics from '../services/analytics.js';
@@ -16,6 +16,9 @@ import * as boards from '../services/boards.js';
 import * as shoots from '../services/shoots.js';
 import * as finance from '../services/finance.js';
 import * as onboarding from '../services/onboarding.js';
+import * as reports from '../services/reports.js';
+import { recordGroupMessage, type IncomingMessage } from '../services/chatlog.js';
+import { reportPdf, sendReport } from '../services/reportSend.js';
 
 export interface HttpConfig {
   botToken: string;
@@ -78,6 +81,15 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
       const body = z.object({ telegramId: z.number().int(), firstName: z.string().min(1) }).parse(req.body);
       const user = (await findUserByTelegram(ctx.db, body.telegramId)) ?? (await upsertTelegramUser(ctx.db, { id: body.telegramId, first_name: body.firstName }));
       return { token: await issueToken(user.id, cfg.jwtSecret), user, startParam: null, companies: await org.myCompanies(ctx.db, user.id) };
+    });
+    // Local development: bind a fake group and feed it messages as if the bot received them.
+    app.post('/api/dev/chat', async (req) => {
+      const actor = await actorOf(req);
+      const body = z.object({ projectId: z.string().uuid(), chatId: z.number().int(), title: z.string(), messages: z.array(z.record(z.string(), z.unknown())) }).parse(req.body);
+      await projects.bindChat(ctx, actor, body.projectId, body.chatId, body.title);
+      let n = 0;
+      for (const m of body.messages) if (await recordGroupMessage(ctx, m as unknown as IncomingMessage)) n++;
+      return { n };
     });
   }
 
@@ -217,6 +229,28 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
     return { ok: true };
   });
   app.post('/api/onboarding/:id/ack', async (req) => onboarding.acknowledge(ctx, await actorOf(req), (req.params as { id: string }).id));
+
+  // ---------------------------------------------------------------- reports
+  app.get('/api/reports', async (req) => reports.buildReport(ctx, await actorOf(req), req.query as never));
+  app.post('/api/reports/send', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => sendReport(ctx, await actorOf(req), req.body as never));
+  app.post('/api/reports/link', async (req) => {
+    const actor = await actorOf(req);
+    const q = reports.reportQuery.parse(req.body);
+    const t = await issuePurposeToken('report', actor.userId, { cid: actor.companyId, p: q.projectId ?? null, f: q.from, to: q.to }, cfg.jwtSecret, 600);
+    return { url: `/api/reports/pdf?t=${encodeURIComponent(t)}` };
+  });
+  // Opened by link (Telegram / browser download) — the short-lived token replaces the auth header.
+  app.get('/api/reports/pdf', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const t = z.object({ t: z.string().min(20) }).parse(req.query).t;
+    const claims = await verifyPurposeToken('report', t, cfg.jwtSecret);
+    const actor = await loadActor(ctx.db, claims.sub, String(claims.cid));
+    const { fileName, pdf } = await reportPdf(ctx, actor, { projectId: (claims.p as string | null) ?? undefined, from: String(claims.f), to: String(claims.to) });
+    return reply
+      .header('content-type', 'application/pdf')
+      .header('content-disposition', `inline; filename="${fileName.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+      .header('cache-control', 'private, no-store')
+      .send(pdf);
+  });
 
   app.get('/api/shoots', async (req) => shoots.listShoots(ctx, await actorOf(req), req.query as never));
   app.post('/api/shoots', async (req) => shoots.createShoot(ctx, await actorOf(req), req.body as never));

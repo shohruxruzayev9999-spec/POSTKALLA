@@ -102,3 +102,21 @@ export async function verifyToken(token: string, secret: string): Promise<string
     throw new DomainError('UNAUTHORIZED', 'Sessiya tugagan, qayta kiring');
   }
 }
+
+/**
+ * Short-lived token for one purpose (e.g. opening a report PDF by link). Signed with a key derived
+ * from the purpose, so it can never be used as a session token and vice versa.
+ */
+export async function issuePurposeToken(purpose: string, userId: string, claims: Record<string, unknown>, secret: string, ttlSec = 600): Promise<string> {
+  return new SignJWT(claims).setProtectedHeader({ alg: 'HS256' }).setSubject(userId).setIssuedAt().setExpirationTime(`${ttlSec}s`).sign(enc(`${secret}:${purpose}`));
+}
+
+export async function verifyPurposeToken(purpose: string, token: string, secret: string): Promise<{ sub: string } & Record<string, unknown>> {
+  try {
+    const { payload } = await jwtVerify(token, enc(`${secret}:${purpose}`), { algorithms: ['HS256'] });
+    if (!payload.sub) throw new Error('no sub');
+    return payload as { sub: string } & Record<string, unknown>;
+  } catch {
+    throw new DomainError('UNAUTHORIZED', 'Havola eskirgan — hisobotni qaytadan oching');
+  }
+}

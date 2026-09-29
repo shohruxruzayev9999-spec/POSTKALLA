@@ -19,6 +19,7 @@ RUN npm ci --omit=dev --workspace @retarget/shared --workspace @retarget/api --i
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY apps/api/drizzle apps/api/drizzle
+COPY apps/api/assets apps/api/assets
 USER node
 EXPOSE 8080
 # e2-micro has 1 GB RAM — keep the heap small.

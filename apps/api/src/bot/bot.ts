@@ -1,11 +1,12 @@
 import { DomainError, canAccess, type TaskAction } from '@retarget/shared';
 import { and, eq } from 'drizzle-orm';
-import { Bot, GrammyError, InlineKeyboard, type Api, type Context } from 'grammy';
+import { Bot, GrammyError, InlineKeyboard, InputFile, type Api, type Context } from 'grammy';
 import { findUserByTelegram, upsertTelegramUser } from '../auth/telegram.js';
 import { memberships, projects, tasks, users } from '../db/schema.js';
 import { loadActor, type Ctx } from '../services/context.js';
 import type { Notifier, ReminderDelivery, SentMessage, TaskCard } from '../services/notifier.js';
 import { bindChat } from '../services/projects.js';
+import { recordGroupMessage } from '../services/chatlog.js';
 import { actOnTask, addTaskFile, taskCard } from '../services/tasks.js';
 import { cardText, esc, reminderText } from './format.js';
 
@@ -97,6 +98,18 @@ export class TelegramNotifier implements Notifier {
       else throw e;
     }
   }
+
+  async sendDocument(telegramId: number, file: Uint8Array, fileName: string, caption: string): Promise<void> {
+    try {
+      await this.api.sendDocument(telegramId, new InputFile(file, fileName), { caption, parse_mode: 'HTML' });
+    } catch (e) {
+      if (e instanceof GrammyError && e.error_code === 403) {
+        await this.onBlocked(telegramId);
+        throw new DomainError('VALIDATION', 'Bot sizga yoza olmaydi: botni oching va /start bosing');
+      }
+      throw e;
+    }
+  }
 }
 
 /** Waiting for a comment typed as a reply (RETURN / BLOCK from a group). In-memory: single process. */
@@ -113,6 +126,14 @@ export function registerHandlers(bot: Bot, ctx: Ctx, botUsername: string) {
     if (!t) throw new DomainError('NOT_FOUND', 'Vazifa topilmadi');
     return loadActor(ctx.db, user.id, t.companyId);
   }
+
+  // Every message in a bound project group is kept for reports (needs admin rights or privacy mode off).
+  bot.use(async (c, next) => {
+    if (c.message && c.chat && c.chat.type !== 'private') {
+      await recordGroupMessage(ctx, c.message).catch((e) => console.error('[bot] chat log', e));
+    }
+    return next();
+  });
 
   bot.command('start', async (c) => {
     if (c.chat.type !== 'private' || !c.from) return;

@@ -14,6 +14,7 @@ Telegram Mini App ERP for marketing agencies (multi-tenant SaaS). Language of UI
 - Tenant isolation: every query filters by `company_id`; actor is loaded from DB per request (never from the token).
 - Nobody approves their own task. Deadline moves need a manager + reason; motivation uses `original_deadline`.
 - Reminders count working hours only; one live reminder per chat (previous is deleted); 3 overdue reminders → project manager (+1 wh) → CEO (+1 wh, only if the status did not change).
+- Report PDF links use a purpose-bound token (`issuePurposeToken`) that can never act as a session token.
 - Board drag = the same state-machine action as a button (`actionToReach`); columns are per board (main/DESIGN/MEDIA) and map to a status.
 
 ## Commands
@@ -35,4 +36,5 @@ Every push to `main` runs workflow "Server" (tests → build → ship; also manu
 - [x] Dizayn/Media pages: month stats, completion ring, review queue with approve/return, team share of open work, project progress
 - [x] Moliya (CEO/Finance only): editable income/expense grid, derived status, debtors, month copy, trend chart, audit history
 - [x] Onboarding: block documents per audience (all / department), drafts, read receipts «Tanishdim» (reset on content change), starter kit
-- [ ] Hisobotlar, AI digest, Obuna, ru/en translations
+- [x] Hisobotlar: project/company report from ERP data + stored Telegram group messages (`chat_messages`, bot must be group admin); preview page, PDF (pdfkit + bundled Manrope TTF in `apps/api/assets/fonts`), send to Telegram; optional AI summary (ANTHROPIC_API_KEY)
+- [ ] AI digest, Obuna, ru/en translations

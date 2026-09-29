@@ -10,12 +10,15 @@ import {
 } from '@retarget/shared';
 import type { Db } from '../db/client.js';
 import { companies, departments, memberships, projectMembers, projects, users } from '../db/schema.js';
+import type { AiClient } from './ai.js';
 import type { Notifier } from './notifier.js';
 
 export interface Ctx {
   db: Db;
   notifier: Notifier;
   now: () => Date;
+  /** Optional language model (ANTHROPIC_API_KEY); every use has a rule-based fallback. */
+  ai?: AiClient;
 }
 
 export type Company = typeof companies.$inferSelect;
