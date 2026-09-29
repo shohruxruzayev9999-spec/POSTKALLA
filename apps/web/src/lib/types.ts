@@ -29,6 +29,8 @@ export interface Company {
   reminderPolicy: Record<string, unknown>;
   digestEnabled: boolean;
   digestTime: string | null;
+  plan: string;
+  planUntil: string | null;
 }
 export interface AppContext {
   company: Company;

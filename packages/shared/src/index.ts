@@ -5,3 +5,4 @@ export * from './worktime.js';
 export * from './motivation.js';
 export * from './kpi.js';
 export * from './reminders.js';
+export * from './plans.js';

@@ -16,6 +16,7 @@ import { Finance } from './pages/Finance';
 import { OnboardingDocs } from './pages/OnboardingDocs';
 import { Reports } from './pages/Reports';
 import { Digest } from './pages/Digest';
+import { Billing } from './pages/Billing';
 import { Tasks } from './pages/Tasks';
 import { Team } from './pages/Team';
 import { Icon, Ring } from './ui/kit';
@@ -73,6 +74,7 @@ export function App() {
       if (b.startParam?.startsWith('inv_')) setInvite(b.startParam.slice(4));
       if (b.startParam?.startsWith('task_')) go('tasks', b.startParam.slice(5));
       if (b.startParam === 'digest') go('digest');
+      if (b.startParam === 'billing') go('billing');
       if (b.startParam?.startsWith('rep_')) go('reports', b.startParam.slice(4));
       const active = b.companies.filter((c) => c.status === 'ACTIVE');
       const pick = active.find((c) => c.id === store.companyId) ?? active[0];
@@ -153,6 +155,7 @@ export const NAV: NavItem[] = [
   { name: 'reports', label: 'Hisobotlar', icon: 'report', section: 'admin' },
   { name: 'onboarding', label: 'Onboarding', icon: 'book', section: 'admin' },
   { name: 'finance', label: 'Moliya', icon: 'wallet', section: 'admin', when: (can) => can('finance.view') },
+  { name: 'billing', label: 'Obuna', icon: 'crown', section: 'admin', when: (can) => can('billing.manage') },
   { name: 'settings', label: 'Sozlamalar', icon: 'settings', section: 'admin', when: (can) => can('settings.company') || can('settings.department') },
 ];
 const TABS = ['home', 'tasks', 'projects', 'team'];
@@ -182,6 +185,8 @@ function Shell() {
         return <Section key="media" section="MEDIA" openId={route.id} />;
       case 'finance':
         return <Finance />;
+      case 'billing':
+        return <Billing />;
       case 'digest':
         return <Digest />;
       case 'reports':

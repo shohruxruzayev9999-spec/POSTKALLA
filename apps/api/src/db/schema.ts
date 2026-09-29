@@ -53,6 +53,9 @@ export const companies = pgTable('companies', {
   /** Morning AI/analytics digest to leads (Telegram DM + dashboard). Time defaults to work start. */
   digestEnabled: boolean('digest_enabled').notNull().default(true),
   digestTime: text('digest_time'),
+  /** SaaS plan: TRIAL | START | BUSINESS | PREMIUM. `planUntil` null on a paid plan = no end date. */
+  plan: text('plan').notNull().default('TRIAL'),
+  planUntil: date('plan_until'),
   createdAt: createdAt(),
 });
 
@@ -470,4 +473,28 @@ export const digests = pgTable(
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('digests_company_day_uq').on(t.companyId, t.day)],
+);
+
+/** A request to pay for a plan. Confirmed by a platform admin (manual payment until a gateway is connected). */
+export const paymentRequests = pgTable(
+  'payment_requests',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    plan: text('plan').notNull(),
+    months: integer('months').notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    discountPct: integer('discount_pct').notNull().default(0),
+    /** PENDING | PAID | CANCELLED */
+    status: text('status').notNull().default('PENDING'),
+    method: text('method'),
+    contact: text('contact'),
+    note: text('note'),
+    requestedBy: uuid('requested_by').notNull().references(() => users.id),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: ts('decided_at'),
+    paidUntil: date('paid_until'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('payment_requests_company_idx').on(t.companyId, t.createdAt)],
 );

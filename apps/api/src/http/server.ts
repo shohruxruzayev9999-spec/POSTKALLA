@@ -18,6 +18,7 @@ import * as finance from '../services/finance.js';
 import * as onboarding from '../services/onboarding.js';
 import * as reports from '../services/reports.js';
 import * as digest from '../services/digest.js';
+import * as billing from '../services/billing.js';
 import { recordGroupMessage, type IncomingMessage } from '../services/chatlog.js';
 import { reportPdf, sendReport } from '../services/reportSend.js';
 
@@ -230,6 +231,20 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
     return { ok: true };
   });
   app.post('/api/onboarding/:id/ack', async (req) => onboarding.acknowledge(ctx, await actorOf(req), (req.params as { id: string }).id));
+
+  // ---------------------------------------------------------------- billing (Obuna)
+  app.get('/api/billing', async (req) => billing.billingOverview(ctx, await actorOf(req)));
+  app.post('/api/billing/request', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req) => billing.requestPayment(ctx, await actorOf(req), req.body as never));
+  app.get('/api/platform/payments', async (req) => {
+    await auth(req);
+    return billing.pendingPayments(ctx, req.userId!);
+  });
+  app.post('/api/platform/payments/:id', async (req) => {
+    await auth(req);
+    const { id } = idParam.parse(req.params);
+    const { decision } = z.object({ decision: z.enum(['PAID', 'CANCELLED']) }).parse(req.body);
+    return billing.decidePayment(ctx, req.userId!, id, decision);
+  });
 
   // ---------------------------------------------------------------- daily digest (recommendations only)
   app.get('/api/digest', async (req) => digest.todayDigest(ctx, await actorOf(req)));

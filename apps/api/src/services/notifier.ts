@@ -49,6 +49,8 @@ export interface Notifier {
   sendReminder(d: ReminderDelivery): Promise<SentMessage[]>;
   /** A private message (HTML), optionally with one button that opens the Mini App at `startParam`. */
   direct(telegramId: number, text: string, button?: { text: string; startParam?: string }): Promise<void>;
+  /** A payment request for a platform admin, with confirm / cancel buttons. */
+  paymentRequest(telegramId: number, text: string, requestId: string): Promise<void>;
   /** Send a file (a PDF report) to a person's private chat. */
   sendDocument(telegramId: number, file: Uint8Array, fileName: string, caption: string): Promise<void>;
 }
@@ -63,4 +65,5 @@ export class NullNotifier implements Notifier {
   }
   async direct(): Promise<void> {}
   async sendDocument(): Promise<void> {}
+  async paymentRequest(): Promise<void> {}
 }

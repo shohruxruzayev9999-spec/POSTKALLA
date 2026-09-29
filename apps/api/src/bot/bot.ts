@@ -7,6 +7,7 @@ import { loadActor, type Ctx } from '../services/context.js';
 import type { Notifier, ReminderDelivery, SentMessage, TaskCard } from '../services/notifier.js';
 import { bindChat } from '../services/projects.js';
 import { recordGroupMessage } from '../services/chatlog.js';
+import { decidePayment } from '../services/billing.js';
 import { actOnTask, addTaskFile, taskCard } from '../services/tasks.js';
 import { cardText, esc, reminderText } from './format.js';
 
@@ -104,6 +105,11 @@ export class TelegramNotifier implements Notifier {
     }
   }
 
+  async paymentRequest(telegramId: number, text: string, requestId: string): Promise<void> {
+    const kb = new InlineKeyboard().text('✅ To‘landi', `pay:${requestId}:ok`).text('✖️ Bekor', `pay:${requestId}:no`);
+    await this.dm(telegramId, text, kb);
+  }
+
   async sendDocument(telegramId: number, file: Uint8Array, fileName: string, caption: string): Promise<void> {
     try {
       await this.api.sendDocument(telegramId, new InputFile(file, fileName), { caption, parse_mode: 'HTML' });
@@ -192,6 +198,22 @@ export function registerHandlers(bot: Bot, ctx: Ctx, botUsername: string) {
       await bindChat(ctx, actor, p.id, c.chat.id, 'title' in c.chat ? (c.chat.title ?? '') : '');
       await c.editMessageText(`✅ Guruh «${esc(p.name)}» loyihasiga ulandi. Yangi vazifalar shu yerda tugmalari bilan chiqadi.`, { parse_mode: 'HTML' });
       await c.answerCallbackQuery();
+    } catch (e) {
+      await c.answerCallbackQuery({ text: errorText(e), show_alert: true });
+    }
+  });
+
+  // ------------------------------------------------------------------ payment confirmations (platform admins)
+  bot.callbackQuery(/^pay:([0-9a-f-]{36}):(ok|no)$/, async (c) => {
+    try {
+      const user = await findUserByTelegram(ctx.db, c.from.id);
+      if (!user) throw new DomainError('FORBIDDEN', 'Ruxsat yo‘q');
+      const decision = c.match[2] === 'ok' ? 'PAID' : 'CANCELLED';
+      const r = await decidePayment(ctx, user.id, c.match[1]!, decision);
+      const mark = decision === 'PAID' ? `✅ Tasdiqlandi — ${r.request.paidUntil} gacha` : '✖️ Bekor qilindi';
+      const original = c.callbackQuery.message && 'text' in c.callbackQuery.message ? (c.callbackQuery.message.text ?? '') : '';
+      await c.editMessageText(`${esc(original)}\n\n<b>${mark}</b>`, { parse_mode: 'HTML' }).catch(() => undefined);
+      await c.answerCallbackQuery({ text: mark });
     } catch (e) {
       await c.answerCallbackQuery({ text: errorText(e), show_alert: true });
     }

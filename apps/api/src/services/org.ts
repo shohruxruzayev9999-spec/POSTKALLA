@@ -9,6 +9,8 @@ import {
   assertOwnerRemains,
   canAccess,
   checkAccess,
+  localDateString,
+  TRIAL_DAYS,
   type Role,
 } from '@retarget/shared';
 import { z } from 'zod';
@@ -43,7 +45,10 @@ export const createCompanyInput = z.object({
 export async function createCompany(ctx: Ctx, userId: string, input: z.input<typeof createCompanyInput>) {
   const data = createCompanyInput.parse(input);
   return ctx.db.transaction(async (tx) => {
-    const [company] = await tx.insert(companies).values({ name: data.name }).returning();
+    // New agencies start with a free trial; the timezone default is Tashkent until settings change it.
+    const today = localDateString(ctx.now(), 'Asia/Tashkent');
+    const trialEnd = new Date(Date.parse(`${today}T00:00:00Z`) + TRIAL_DAYS * 86_400_000).toISOString().slice(0, 10);
+    const [company] = await tx.insert(companies).values({ name: data.name, plan: 'TRIAL', planUntil: trialEnd }).returning();
     await tx.insert(memberships).values({ companyId: company!.id, userId, roles: ['OWNER'], position: 'CEO', joinedAt: ctx.now() });
     if (data.departments.length) {
       await tx.insert(departments).values(data.departments.map((d) => ({ companyId: company!.id, name: d.name, section: detectSection(d.name) })));

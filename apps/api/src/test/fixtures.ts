@@ -14,6 +14,7 @@ export class RecordingNotifier implements Notifier {
   deleted: Array<{ chatId: number; messageId: number }> = [];
   dms: Array<{ telegramId: number; text: string }> = [];
   documents: Array<{ telegramId: number; fileName: string; caption: string; bytes: number }> = [];
+  payments: Array<{ telegramId: number; text: string; requestId: string }> = [];
   private nextId = 100;
 
   async upsertTaskCard(card: TaskCard): Promise<SentMessage | null> {
@@ -32,6 +33,9 @@ export class RecordingNotifier implements Notifier {
   }
   async direct(telegramId: number, text: string) {
     this.dms.push({ telegramId, text });
+  }
+  async paymentRequest(telegramId: number, text: string, requestId: string) {
+    this.payments.push({ telegramId, text, requestId });
   }
   async sendDocument(telegramId: number, file: Uint8Array, fileName: string, caption: string) {
     this.documents.push({ telegramId, fileName, caption, bytes: file.byteLength });

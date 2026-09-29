@@ -7,6 +7,7 @@ import { Avatar, Bar, Empty, Icon, Ring, scoreTone, Skeleton } from '../ui/kit';
 import { go, useApp } from '../ui/state';
 import { TaskRow } from '../ui/TaskRow';
 import { DigestPanel, LEAD_ROLES } from './Digest';
+import { planStatus } from '@retarget/shared';
 
 export function Home() {
   const { session, theme, setTheme, switchCompany } = useApp();
@@ -22,6 +23,9 @@ export function Home() {
   const others = session.companies.filter((c) => c.id !== session.ctx.company.id && c.status === 'ACTIVE');
   const docs = useQuery({ queryKey: ['onboarding'], queryFn: () => api<Array<{ id: string; forMe: boolean; acked: boolean }>>('/onboarding') });
   const toRead = (docs.data ?? []).filter((d) => d.forMe && !d.acked);
+  const company = session.ctx.company;
+  const plan = planStatus(company.plan, company.planUntil, new Date().toLocaleDateString('en-CA', { timeZone: company.timezone }));
+  const planAlert = session.ctx.roles.includes('OWNER') && (plan.status === 'EXPIRED' || ((plan.status === 'TRIAL' || plan.status === 'ACTIVE') && (plan.daysLeft ?? 99) <= 5));
 
   return (
     <div className="stack" style={{ gap: 14 }}>
@@ -47,6 +51,16 @@ export function Home() {
           </button>
         </div>
       </header>
+
+      {planAlert && (
+        <button className={`banner ${plan.status === 'EXPIRED' ? 'danger' : 'warn'}`} style={{ font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer' }} onClick={() => go('billing')}>
+          <Icon name="crown" size={20} />
+          <div className="grow">
+            {plan.status === 'EXPIRED' ? <b>Obuna muddati tugagan.</b> : <b>{plan.status === 'TRIAL' ? 'Sinov davri' : 'Obuna'} {plan.daysLeft} kundan keyin tugaydi.</b>} Tarifni tanlang — ish to‘xtamaydi.
+          </div>
+          <Icon name="chevron" size={18} />
+        </button>
+      )}
 
       {toRead.length > 0 && (
         <button className="card row click" style={{ gap: 12, textAlign: 'left', font: 'inherit', color: 'inherit', borderColor: 'color-mix(in srgb, var(--warn) 40%, transparent)' }} onClick={() => go('onboarding', toRead.length === 1 ? toRead[0]!.id : undefined)}>
