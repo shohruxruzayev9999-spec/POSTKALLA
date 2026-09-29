@@ -230,3 +230,27 @@ export function minutesAfterStart(date: Date, schedule: WorkSchedule): number {
   const [sh, sm] = parseHm(schedule.start);
   return p.hour * 60 + p.minute - (sh * 60 + sm);
 }
+
+/** The local day of a "YYYY-MM-DD" date. */
+export function localDayOf(iso: string): LocalDay {
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return { y, m, d, weekday: ((t.getUTCDay() + 6) % 7) + 1 };
+}
+
+export function isWorkingDate(iso: string, schedule: WorkSchedule): boolean {
+  return isWorkingDay(localDayOf(iso), schedule);
+}
+
+/** The last working date strictly before `iso` (within a month), or null. */
+export function previousWorkingDate(iso: string, schedule: WorkSchedule): string | null {
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
+  let t = Date.UTC(y, m - 1, d);
+  for (let i = 0; i < 31; i++) {
+    t -= 86_400_000;
+    const x = new Date(t);
+    const s = isoDate(x.getUTCFullYear(), x.getUTCMonth() + 1, x.getUTCDate());
+    if (isWorkingDate(s, schedule)) return s;
+  }
+  return null;
+}

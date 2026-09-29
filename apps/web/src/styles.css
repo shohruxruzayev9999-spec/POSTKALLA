@@ -461,3 +461,12 @@ select.fin-cell { cursor: pointer; }
 .rep-bars i { display: block; border-radius: 2px 2px 0 0; }
 .rep-key { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
 .rep-msg { border-left: 3px solid var(--info); padding: 2px 0 2px 10px; display: flex; flex-direction: column; gap: 2px; }
+
+/* ---------- Kunlik tahlil */
+.dg-item { display: flex; align-items: center; gap: 10px; justify-content: space-between; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--surface-2); color: var(--text); font: inherit; text-align: left; }
+.dg-item.click { cursor: pointer; }
+.dg-item.click:hover { border-color: var(--line-strong); }
+.dg-item:disabled { opacity: 1; cursor: default; }
+.dg-item > svg { flex-shrink: 0; color: var(--faint); }
+.dg-row { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dg-spark { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }

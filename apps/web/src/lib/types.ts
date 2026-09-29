@@ -27,6 +27,8 @@ export interface Company {
   officeLng: number | null;
   officeRadiusM: number;
   reminderPolicy: Record<string, unknown>;
+  digestEnabled: boolean;
+  digestTime: string | null;
 }
 export interface AppContext {
   company: Company;

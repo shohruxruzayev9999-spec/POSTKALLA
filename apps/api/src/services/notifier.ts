@@ -47,7 +47,8 @@ export interface Notifier {
   upsertTaskCard(card: TaskCard): Promise<SentMessage | null>;
   taskChanged(card: TaskCard, action: TaskAction, actorName: string, comment: string | null): Promise<void>;
   sendReminder(d: ReminderDelivery): Promise<SentMessage[]>;
-  direct(telegramId: number, text: string): Promise<void>;
+  /** A private message (HTML), optionally with one button that opens the Mini App at `startParam`. */
+  direct(telegramId: number, text: string, button?: { text: string; startParam?: string }): Promise<void>;
   /** Send a file (a PDF report) to a person's private chat. */
   sendDocument(telegramId: number, file: Uint8Array, fileName: string, caption: string): Promise<void>;
 }

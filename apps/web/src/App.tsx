@@ -15,6 +15,7 @@ import { Section } from './pages/Section';
 import { Finance } from './pages/Finance';
 import { OnboardingDocs } from './pages/OnboardingDocs';
 import { Reports } from './pages/Reports';
+import { Digest } from './pages/Digest';
 import { Tasks } from './pages/Tasks';
 import { Team } from './pages/Team';
 import { Icon, Ring } from './ui/kit';
@@ -71,6 +72,8 @@ export function App() {
       if (b.stage !== 'ready') return;
       if (b.startParam?.startsWith('inv_')) setInvite(b.startParam.slice(4));
       if (b.startParam?.startsWith('task_')) go('tasks', b.startParam.slice(5));
+      if (b.startParam === 'digest') go('digest');
+      if (b.startParam?.startsWith('rep_')) go('reports', b.startParam.slice(4));
       const active = b.companies.filter((c) => c.status === 'ACTIVE');
       const pick = active.find((c) => c.id === store.companyId) ?? active[0];
       store.setCompany(pick?.id ?? null);
@@ -133,7 +136,7 @@ interface NavItem {
   label: string;
   icon: string;
   section: 'main' | 'work' | 'admin';
-  when?: (can: (a: string, s?: never) => boolean) => boolean;
+  when?: (can: (a: string, s?: never) => boolean, ctx: { roles: string[]; headOfDepartmentIds: string[] }) => boolean;
 }
 
 /** Every section of the app. The sidebar shows them all; the phone tab bar shows the first four + "Ko'proq". */
@@ -143,6 +146,7 @@ export const NAV: NavItem[] = [
   { name: 'projects', label: 'Loyihalar', icon: 'folder', section: 'main' },
   { name: 'team', label: 'Jamoa', icon: 'team', section: 'main' },
   { name: 'attendance', label: 'Davomat', icon: 'clock', section: 'main' },
+  { name: 'digest', label: 'AI tahlil', icon: 'sparkle', section: 'main', when: (_can, ctx) => ctx.roles.some((r) => ['OWNER', 'ADMIN', 'PM', 'MARKETER'].includes(r)) || ctx.headOfDepartmentIds.length > 0 },
   { name: 'design', label: 'Dizayn', icon: 'palette', section: 'work' },
   { name: 'media', label: 'Media', icon: 'film', section: 'work' },
   { name: 'shoots', label: 'Syomka', icon: 'camera', section: 'work' },
@@ -157,7 +161,7 @@ const SECTION_LABEL = { main: '', work: 'Ishlab chiqarish', admin: 'Boshqaruv' }
 function Shell() {
   const route = useRoute();
   const { session, can } = useApp();
-  const nav = NAV.filter((n) => !n.when || n.when(can as never));
+  const nav = NAV.filter((n) => !n.when || n.when(can as never, session.ctx));
   const page = (() => {
     switch (route.name) {
       case 'tasks':
@@ -178,6 +182,8 @@ function Shell() {
         return <Section key="media" section="MEDIA" openId={route.id} />;
       case 'finance':
         return <Finance />;
+      case 'digest':
+        return <Digest />;
       case 'reports':
         return <Reports key={route.id ?? 'all'} projectId={route.id} />;
       case 'onboarding':

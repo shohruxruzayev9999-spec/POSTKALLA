@@ -65,7 +65,7 @@ export class TelegramNotifier implements Notifier {
     const head = `<b>#${card.number} · ${esc(card.title)}</b>`;
     const note = comment ? `\n💬 ${esc(comment)}` : '';
     const link = new InlineKeyboard().url('📱 Ochish', appLink(this.botUsername, `task_${card.id}`));
-    const send = (to: number, text: string) => this.direct(to, text, link);
+    const send = (to: number, text: string) => this.dm(to, text, link);
     if (action === 'SUBMIT' && card.reviewer) await send(card.reviewer.telegramId, `👀 Tekshiruvga keldi: ${head}\nIjrochi: ${esc(card.assignee.name)}`);
     if (action === 'RETURN') await send(card.assignee.telegramId, `↩️ Qaytarildi (R${card.revision}): ${head}\n${esc(actorName)}${note}`);
     if (action === 'APPROVE') await send(card.assignee.telegramId, `✅ Qabul qilindi: ${head}\n${esc(actorName)} — rahmat!`);
@@ -90,7 +90,12 @@ export class TelegramNotifier implements Notifier {
     return out;
   }
 
-  async direct(telegramId: number, text: string, kb?: InlineKeyboard): Promise<void> {
+  async direct(telegramId: number, text: string, button?: { text: string; startParam?: string }): Promise<void> {
+    const kb = button ? new InlineKeyboard().url(button.text, appLink(this.botUsername, button.startParam)) : undefined;
+    await this.dm(telegramId, text, kb);
+  }
+
+  private async dm(telegramId: number, text: string, kb?: InlineKeyboard): Promise<void> {
     try {
       await this.api.sendMessage(telegramId, text, { parse_mode: 'HTML', reply_markup: kb, link_preview_options: { is_disabled: true } });
     } catch (e) {

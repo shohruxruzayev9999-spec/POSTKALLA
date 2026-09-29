@@ -4,6 +4,7 @@ import { connect } from './db/client.js';
 import { buildServer } from './http/server.js';
 import { runReminders } from './jobs/reminders.js';
 import { runShootReminders } from './services/shoots.js';
+import { runDigests } from './services/digest.js';
 import type { Ctx } from './services/context.js';
 import { NullNotifier } from './services/notifier.js';
 import { anthropicClient } from './services/ai.js';
@@ -75,6 +76,8 @@ async function main() {
       if (r.sent || r.skipped) app.log.info(r, 'reminders');
       const shootsSent = await runShootReminders(ctx);
       if (shootsSent) app.log.info({ shootsSent }, 'shoot reminders');
+      const digestsSent = await runDigests(ctx);
+      if (digestsSent) app.log.info({ digestsSent }, 'daily digests');
     } catch (e) {
       app.log.error(e, 'reminders failed');
     } finally {

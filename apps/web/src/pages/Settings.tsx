@@ -40,6 +40,8 @@ function CompanyForm() {
     managerAfter: policy.managerAfterWorkingHours ?? 1,
     ceoAfter: policy.ceoAfterWorkingHours ?? 1,
     skipManager: policy.skipManager ?? policy.skipDeptHead ?? false,
+    digestEnabled: c.digestEnabled ?? true,
+    digestTime: c.digestTime ?? c.workStart,
   });
   const save = useMutation({
     mutationFn: () =>
@@ -55,6 +57,8 @@ function CompanyForm() {
           officeLng: form.officeLng,
           officeRadiusM: form.officeRadiusM,
           reminderPolicy: { overdueWorkingHours: Array.from({ length: form.reminders }, (_, i) => i * 2), managerAfterWorkingHours: form.managerAfter, ceoAfterWorkingHours: form.ceoAfter, skipManager: form.skipManager },
+          digestEnabled: form.digestEnabled,
+          digestTime: form.digestTime,
         },
       }),
     onSuccess: () => {
@@ -152,6 +156,19 @@ function CompanyForm() {
       <div className="seg">
         <button className={!form.skipManager ? 'on' : ''} onClick={() => setForm({ ...form, skipManager: false })}>Menejer → CEO</button>
         <button className={form.skipManager ? 'on' : ''} onClick={() => setForm({ ...form, skipManager: true })}>To‘g‘ri CEO</button>
+      </div>
+      <div className="section-title" style={{ marginTop: 6 }}>Kunlik tahlil (AI agent)</div>
+      <div className="small muted" style={{ lineHeight: 1.5 }}>
+        Har ish kuni ertalab CEO, admin, loyiha menejerlari, marketologlar va bo‘lim boshliqlariga Telegram’da tahlil va tavsiyalar keladi. Agent faqat tavsiya beradi — hech narsani o‘zgartirmaydi.
+      </div>
+      <div className="grid grid-2">
+        <div className="seg" style={{ alignSelf: 'end' }}>
+          <button className={form.digestEnabled ? 'on' : ''} onClick={() => setForm({ ...form, digestEnabled: true })}>Yoqilgan</button>
+          <button className={!form.digestEnabled ? 'on' : ''} onClick={() => setForm({ ...form, digestEnabled: false })}>O‘chiq</button>
+        </div>
+        <Field label="Yuborish vaqti">
+          <input className="input" type="time" value={form.digestTime} disabled={!form.digestEnabled} onChange={(e) => setForm({ ...form, digestTime: e.target.value })} />
+        </Field>
       </div>
       <button className="btn primary block" disabled={save.isPending || form.workDays.length === 0} onClick={() => save.mutate()}>Saqlash</button>
     </div>

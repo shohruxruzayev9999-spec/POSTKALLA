@@ -50,6 +50,9 @@ export const companies = pgTable('companies', {
   officeLat: doublePrecision('office_lat'),
   officeLng: doublePrecision('office_lng'),
   officeRadiusM: integer('office_radius_m').notNull().default(300),
+  /** Morning AI/analytics digest to leads (Telegram DM + dashboard). Time defaults to work start. */
+  digestEnabled: boolean('digest_enabled').notNull().default(true),
+  digestTime: text('digest_time'),
   createdAt: createdAt(),
 });
 
@@ -451,4 +454,20 @@ export const chatMessages = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('chat_messages_uq').on(t.chatId, t.messageId), index('chat_messages_project_idx').on(t.projectId, t.sentAt)],
+);
+
+/** One morning digest per company per day: numbers, rule-based recommendations, optional AI advice. */
+export const digests = pgTable(
+  'digests',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    day: date('day').notNull(),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull(),
+    ai: jsonb('ai').$type<string[] | null>(),
+    sentTo: integer('sent_to').notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('digests_company_day_uq').on(t.companyId, t.day)],
 );

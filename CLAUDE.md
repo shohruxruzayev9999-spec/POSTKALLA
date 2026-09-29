@@ -37,4 +37,5 @@ Every push to `main` runs workflow "Server" (tests → build → ship; also manu
 - [x] Moliya (CEO/Finance only): editable income/expense grid, derived status, debtors, month copy, trend chart, audit history
 - [x] Onboarding: block documents per audience (all / department), drafts, read receipts «Tanishdim» (reset on content change), starter kit
 - [x] Hisobotlar: project/company report from ERP data + stored Telegram group messages (`chat_messages`, bot must be group admin); preview page, PDF (pdfkit + bundled Manrope TTF in `apps/api/assets/fonts`), send to Telegram; optional AI summary (ANTHROPIC_API_KEY)
-- [ ] AI digest, Obuna, ru/en translations
+- [x] AI agent (kunlik tahlil): every working day at `digestTime` (default work start) — rule-based recommendations + optional AI advice, Telegram DM to leads (CEO/admin/PM/marketer/dept heads), dashboard card and page; money only to finance viewers, never sent to the model; recommends only, writes nothing but its own `digests` row
+- [ ] Obuna, ru/en translations

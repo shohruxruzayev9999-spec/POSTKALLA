@@ -6,6 +6,7 @@ import type { Dashboard, TaskListItem } from '../lib/types';
 import { Avatar, Bar, Empty, Icon, Ring, scoreTone, Skeleton } from '../ui/kit';
 import { go, useApp } from '../ui/state';
 import { TaskRow } from '../ui/TaskRow';
+import { DigestPanel, LEAD_ROLES } from './Digest';
 
 export function Home() {
   const { session, theme, setTheme, switchCompany } = useApp();
@@ -60,6 +61,7 @@ export function Home() {
 
       <div className="grid desk-2" style={{ alignItems: 'start' }}>
         <div className="stack" style={{ gap: 14 }}>
+          {(session.ctx.roles.some((r) => LEAD_ROLES.includes(r)) || session.ctx.headOfDepartmentIds.length > 0) && <DigestPanel />}
           <AttendanceCard />
 
           {dash.isPending ? (

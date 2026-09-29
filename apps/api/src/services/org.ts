@@ -72,6 +72,8 @@ export const updateCompanyInput = z.object({
   officeLat: z.number().min(-90).max(90).nullable().optional(),
   officeLng: z.number().min(-180).max(180).nullable().optional(),
   officeRadiusM: z.number().int().min(50).max(5000).optional(),
+  digestEnabled: z.boolean().optional(),
+  digestTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
   reminderPolicy: z
     .object({
       beforeDeadlineHours: z.array(z.number().min(0).max(168)).max(5),

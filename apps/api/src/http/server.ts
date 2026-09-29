@@ -17,6 +17,7 @@ import * as shoots from '../services/shoots.js';
 import * as finance from '../services/finance.js';
 import * as onboarding from '../services/onboarding.js';
 import * as reports from '../services/reports.js';
+import * as digest from '../services/digest.js';
 import { recordGroupMessage, type IncomingMessage } from '../services/chatlog.js';
 import { reportPdf, sendReport } from '../services/reportSend.js';
 
@@ -229,6 +230,10 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
     return { ok: true };
   });
   app.post('/api/onboarding/:id/ack', async (req) => onboarding.acknowledge(ctx, await actorOf(req), (req.params as { id: string }).id));
+
+  // ---------------------------------------------------------------- daily digest (recommendations only)
+  app.get('/api/digest', async (req) => digest.todayDigest(ctx, await actorOf(req)));
+  app.post('/api/digest/refresh', { config: { rateLimit: { max: 4, timeWindow: '1 minute' } } }, async (req) => digest.refreshDigest(ctx, await actorOf(req)));
 
   // ---------------------------------------------------------------- reports
   app.get('/api/reports', async (req) => reports.buildReport(ctx, await actorOf(req), req.query as never));
