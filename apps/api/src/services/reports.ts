@@ -3,6 +3,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { DomainError, canAccess, checkAccess, localDateString, zonedTime } from '@retarget/shared';
 import { z } from 'zod';
 import { chatMessages, clients, financeRows, projects, shoots, tasks, users } from '../db/schema.js';
+import { createHash } from 'node:crypto';
 import { bullets, TtlCache } from './ai.js';
 import { notFound, type Ctx, type ResolvedActor } from './context.js';
 import { canSeeTask } from './tasks.js';
@@ -383,9 +384,6 @@ export function insightsOf(d: ReportData, now: Date): string[] {
 }
 
 async function aiSummary(ctx: Ctx, actor: ResolvedActor, d: ReportData): Promise<string[] | null> {
-  const key = `${actor.companyId}:${d.project?.id ?? '*'}:${d.period.from}:${d.period.to}:${d.finance ? 'f' : ''}:${d.summary.done}:${d.summary.messages}`;
-  const hit = aiCache.get(key);
-  if (hit) return hit;
   const compact = {
     scope: d.scope,
     project: d.project?.name,
@@ -397,15 +395,20 @@ async function aiSummary(ctx: Ctx, actor: ResolvedActor, d: ReportData): Promise
     doneTitles: d.doneTasks.slice(-25).map((t) => t.title),
     clientMessages: d.chat.clientMessages.slice(-20).map((m) => ({ at: m.at.slice(0, 16), text: m.text })),
     projects: d.projects.slice(0, 20),
-    finance: d.finance,
+    // Money is never sent to the model.
   };
+  // The cache key is the exact prompt: what one person may see never leaks into another's summary.
+  const prompt = JSON.stringify(compact);
+  const key = `${actor.companyId}:${createHash('sha256').update(prompt).digest('hex')}`;
+  const hit = aiCache.get(key);
+  if (hit) return hit;
   try {
     const text = await ctx.ai!.complete({
       system:
         'Sen marketing agentligi uchun loyiha tahlilchisisan. Faqat berilgan maʼlumotga tayan, taxmin qilma. ' +
         'Oʻzbek tilida (lotin), qisqa va aniq yoz. 4–6 ta punkt: nima qilindi, mijoz nimani soʻradi yoki nimadan norozi, ' +
         'xavflar, keyingi qadamlar. Har bir punkt bitta qator, "- " bilan boshlansin. Raqamlarni oʻzgartirma.',
-      prompt: JSON.stringify(compact),
+      prompt,
       maxTokens: 700,
     });
     const out = bullets(text, 7);

@@ -38,7 +38,15 @@ declare module 'fastify' {
 }
 
 export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' }, trustProxy: true, bodyLimit: 256 * 1024 });
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? 'info',
+      // Short-lived report links carry a token in the query string — never write it to logs.
+      serializers: { req: (req) => ({ method: req.method, url: req.url.replace(/([?&]t=)[^&]+/, '$1[redacted]'), remoteAddress: req.ip }) },
+    },
+    trustProxy: true,
+    bodyLimit: 256 * 1024,
+  });
 
   app.register(cors, { origin: cfg.corsOrigins.length ? cfg.corsOrigins : true, allowedHeaders: ['authorization', 'content-type', 'x-company-id'] });
   app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
@@ -256,7 +264,7 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.post('/api/reports/link', async (req) => {
     const actor = await actorOf(req);
     const q = reports.reportQuery.parse(req.body);
-    const t = await issuePurposeToken('report', actor.userId, { cid: actor.companyId, p: q.projectId ?? null, f: q.from, to: q.to }, cfg.jwtSecret, 600);
+    const t = await issuePurposeToken('report', actor.userId, { cid: actor.companyId, p: q.projectId ?? null, f: q.from, to: q.to }, cfg.jwtSecret, 180);
     return { url: `/api/reports/pdf?t=${encodeURIComponent(t)}` };
   });
   // Opened by link (Telegram / browser download) — the short-lived token replaces the auth header.

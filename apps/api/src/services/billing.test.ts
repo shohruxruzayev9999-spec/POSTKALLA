@@ -49,10 +49,12 @@ describe('billing (Obuna)', () => {
     expect(platform.notifier.dms.at(-1)).toMatchObject({ telegramId: client.telegramId });
     await expect(decidePayment(platform.ctx, platform.users.ceo.id, r.id, 'CANCELLED')).rejects.toThrow(/tasdiqlangan/);
 
-    // Paying again for the same plan adds to the remaining time.
+    // Paying again for the same plan adds to the remaining time; the confirmed request stays PAID.
     const r2 = await requestPayment(platform.ctx, await loadActor(platform.db, client.id, other.id), { plan: 'BUSINESS', months: 1 });
     const d2 = await decidePayment(platform.ctx, platform.users.ceo.id, r2.id, 'PAID');
     expect(d2.request.paidUntil).toBe('2027-01-21');
+    const all = (await billingOverview(platform.ctx, await loadActor(platform.db, client.id, other.id))).requests;
+    expect(all.map((x) => x.status)).toEqual(['PAID', 'PAID']);
   });
 
   it('a new request replaces a pending one', async () => {

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DURATIONS, DomainError, PLAN_IDS, PLANS, checkAccess, extendUntil, localDateString, planStatus, priceFor, type Duration, type PlanId } from '@retarget/shared';
 import { z } from 'zod';
 import { companies, memberships, paymentRequests, projects, users } from '../db/schema.js';
@@ -15,12 +15,17 @@ const billing = (actor: ResolvedActor) => checkAccess(actor, 'billing.manage', {
  * Platform admins confirm manual payments: PLATFORM_ADMIN_TG_IDS (comma-separated Telegram ids),
  * or — when not set — the owners of the oldest company (the agency that runs the platform).
  */
+let warned = false;
 export async function platformAdminTgIds(ctx: Ctx): Promise<number[]> {
   const env = (process.env.PLATFORM_ADMIN_TG_IDS ?? '')
     .split(',')
     .map((s) => Number(s.trim()))
     .filter((n) => Number.isFinite(n) && n > 0);
   if (env.length) return env;
+  if (process.env.NODE_ENV === 'production' && !warned) {
+    warned = true;
+    console.warn('[billing] PLATFORM_ADMIN_TG_IDS is not set — owners of the oldest company confirm payments');
+  }
   const [first] = await ctx.db.select({ id: companies.id }).from(companies).orderBy(asc(companies.createdAt)).limit(1);
   if (!first) return [];
   const owners = await ctx.db
@@ -79,29 +84,31 @@ export async function requestPayment(ctx: Ctx, actor: ResolvedActor, input: z.in
   billing(actor);
   const data = paymentInput.parse(input);
   const price = priceFor(data.plan, data.months as Duration);
-  const [pending] = await ctx.db
-    .select({ id: paymentRequests.id })
-    .from(paymentRequests)
-    .where(and(eq(paymentRequests.companyId, actor.companyId), eq(paymentRequests.status, 'PENDING')));
-  if (pending) {
-    await ctx.db.update(paymentRequests).set({ status: 'CANCELLED', decidedAt: ctx.now(), note: 'Yangi so‘rov bilan almashtirildi' }).where(eq(paymentRequests.id, pending.id));
-  }
-  const [row] = await ctx.db
-    .insert(paymentRequests)
-    .values({
-      companyId: actor.companyId,
-      plan: data.plan,
-      months: data.months,
-      amount: price.total,
-      discountPct: price.discountPct,
-      method: data.method,
-      contact: data.contact ?? null,
-      note: data.note ?? null,
-      requestedBy: actor.userId,
-      createdAt: ctx.now(),
-    })
-    .returning();
-  await audit(ctx.db, actor, 'billing.request', 'payment_request', row!.id, { plan: data.plan, months: data.months, amount: price.total });
+  const row = await ctx.db.transaction(async (tx) => {
+    // One open request per company: a new one replaces the pending one (never a decided one).
+    await tx.execute(sql`select id from companies where id = ${actor.companyId} for update`);
+    await tx
+      .update(paymentRequests)
+      .set({ status: 'CANCELLED', decidedAt: ctx.now(), note: 'Yangi so‘rov bilan almashtirildi' })
+      .where(and(eq(paymentRequests.companyId, actor.companyId), eq(paymentRequests.status, 'PENDING')));
+    const [r] = await tx
+      .insert(paymentRequests)
+      .values({
+        companyId: actor.companyId,
+        plan: data.plan,
+        months: data.months,
+        amount: price.total,
+        discountPct: price.discountPct,
+        method: data.method,
+        contact: data.contact ?? null,
+        note: data.note ?? null,
+        requestedBy: actor.userId,
+        createdAt: ctx.now(),
+      })
+      .returning();
+    return r!;
+  });
+  await audit(ctx.db, actor, 'billing.request', 'payment_request', row.id, { plan: data.plan, months: data.months, amount: price.total });
 
   const [me] = await ctx.db.select().from(users).where(eq(users.id, actor.userId));
   const text =
@@ -112,8 +119,8 @@ export async function requestPayment(ctx: Ctx, actor: ResolvedActor, input: z.in
     `Usul: ${data.method}\n` +
     `So‘radi: ${esc([me?.firstName, me?.lastName].filter(Boolean).join(' '))}${me?.username ? ` (@${esc(me.username)})` : ''}${data.contact ? `, ${esc(data.contact)}` : ''}` +
     (data.note ? `\nIzoh: ${esc(data.note)}` : '');
-  for (const tg of await platformAdminTgIds(ctx)) await ctx.notifier.paymentRequest(tg, text, row!.id).catch((e) => console.error('[billing] notify', e));
-  return row!;
+  for (const tg of await platformAdminTgIds(ctx)) await ctx.notifier.paymentRequest(tg, text, row.id).catch((e) => console.error('[billing] notify', e));
+  return row;
 }
 
 /** Platform admin: confirm (extends the plan) or cancel a payment request. */
@@ -132,7 +139,12 @@ export async function decidePayment(ctx: Ctx, deciderUserId: string, requestId: 
       paidUntil = extendUntil(c!.plan === r.plan ? c!.planUntil : null, today, r.months);
       await tx.update(companies).set({ plan: r.plan, planUntil: paidUntil }).where(eq(companies.id, c!.id));
     }
-    const [updated] = await tx.update(paymentRequests).set({ status: decision, decidedBy: deciderUserId, decidedAt: now, paidUntil }).where(eq(paymentRequests.id, r.id)).returning();
+    const [updated] = await tx
+      .update(paymentRequests)
+      .set({ status: decision, decidedBy: deciderUserId, decidedAt: now, paidUntil })
+      .where(and(eq(paymentRequests.id, r.id), eq(paymentRequests.status, 'PENDING')))
+      .returning();
+    if (!updated) throw new DomainError('INVALID_TRANSITION', 'So‘rov allaqachon hal qilingan');
 
     const owners = await tx
       .select({ tg: users.telegramId, roles: memberships.roles })

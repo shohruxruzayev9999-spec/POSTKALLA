@@ -3,6 +3,7 @@
 # and its certificate. The old ERP (retarget-erp) and its nginx site are never modified.
 set -euo pipefail
 DOMAIN="$1"
+PLATFORM_ADMINS="${2:-}"
 APP=~/postkalla
 mkdir -p "$APP/backups"
 cd "$APP"
@@ -14,8 +15,8 @@ if [ ! -f .env ]; then
 fi
 BOT_TOKEN="$(cat .bot_token)"; rm -f .bot_token
 AI_KEY=""; if [ -s .ai_key ]; then AI_KEY="$(cat .ai_key)"; fi; rm -f .ai_key
-grep -v -E '^(BOT_TOKEN|DOMAIN|ANTHROPIC_API_KEY)=' .env > .env.tmp || true
-printf 'BOT_TOKEN=%s\nDOMAIN=%s\nANTHROPIC_API_KEY=%s\n' "$BOT_TOKEN" "$DOMAIN" "$AI_KEY" >> .env.tmp
+grep -v -E '^(BOT_TOKEN|DOMAIN|ANTHROPIC_API_KEY|PLATFORM_ADMIN_TG_IDS)=' .env > .env.tmp || true
+printf 'BOT_TOKEN=%s\nDOMAIN=%s\nANTHROPIC_API_KEY=%s\nPLATFORM_ADMIN_TG_IDS=%s\n' "$BOT_TOKEN" "$DOMAIN" "$AI_KEY" "$PLATFORM_ADMINS" >> .env.tmp
 mv .env.tmp .env && chmod 600 .env
 
 # 2. Containers

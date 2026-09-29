@@ -469,6 +469,8 @@ export const digests = pgTable(
     data: jsonb('data').$type<Record<string, unknown>>().notNull(),
     ai: jsonb('ai').$type<string[] | null>(),
     sentTo: integer('sent_to').notNull().default(0),
+    /** Set when the morning messages were sent (a manual refresh never sets it). */
+    sentAt: ts('sent_at'),
     createdAt: createdAt(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },

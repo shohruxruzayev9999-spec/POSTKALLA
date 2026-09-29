@@ -105,6 +105,22 @@ describe('reports (Hisobotlar)', () => {
     await expect(buildReport(b.ctx, other, { projectId: pid, from: '2026-09-01', to: '2026-09-30' })).rejects.toThrow(/topilmadi/);
   });
 
+  it('AI summaries are built per viewer and never see money or other people’s 1:1 tasks', async () => {
+    const { a, owner, aziz, project } = await setup();
+    const prompts: string[] = [];
+    a.ctx.ai = { complete: async ({ prompt }) => (prompts.push(prompt), '- Xulosa') };
+    await createRow(a.ctx, owner, { month: '2026-09', party: 'Kafe Bahor', projectId: project.id, amount: 5_000_000 });
+    a.clock.set(new Date('2026-09-23T12:00:00Z'));
+    const q = { projectId: project.id, from: '2026-09-01', to: '2026-09-30', ai: true };
+    expect((await buildReport(a.ctx, owner, q)).aiSummary).toEqual(['Xulosa']);
+    await buildReport(a.ctx, aziz, q);
+    await buildReport(a.ctx, aziz, q); // cached for the same view
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toMatch(/Maxfiy: narx siyosati/);
+    expect(prompts[1]).not.toMatch(/Maxfiy/);
+    expect(prompts.join()).not.toMatch(/5000000|expected/);
+  });
+
   it('validates the period', async () => {
     const { a, owner } = await setup();
     await expect(buildReport(a.ctx, owner, { from: '2026-09-30', to: '2026-09-01' })).rejects.toThrow();

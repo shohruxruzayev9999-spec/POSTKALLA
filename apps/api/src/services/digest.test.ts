@@ -122,4 +122,15 @@ describe('daily digest (AI agent — recommends only)', () => {
     expect(fresh.finance?.overdueAmount).toBe(5_000_000);
     expect(a.notifier.dms).toHaveLength(0); // rebuilding never messages anyone
   });
+
+  it('an early manual refresh does not cancel the morning messages', async () => {
+    const { a, owner } = await setup();
+    a.clock.set(at('2026-09-22T04:00:00Z')); // 09:00, before the digest time
+    await refreshDigest(a.ctx, owner);
+    expect(await runDigests(a.ctx)).toBe(0);
+    a.clock.set(at('2026-09-22T05:30:00Z'));
+    expect(await runDigests(a.ctx)).toBe(4);
+    await refreshDigest(a.ctx, owner); // after sending: still never re-sent
+    expect(await runDigests(a.ctx)).toBe(0);
+  });
 });

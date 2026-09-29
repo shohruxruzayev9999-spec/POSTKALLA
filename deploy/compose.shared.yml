@@ -31,6 +31,8 @@ services:
       # Optional: enables AI summaries and the daily AI digest.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
+      # Telegram ids that confirm subscription payments (comma-separated).
+      PLATFORM_ADMIN_TG_IDS: ${PLATFORM_ADMIN_TG_IDS:-}
     mem_limit: 350m
   backup:
     image: postgres:16-alpine

@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, inArray, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { DomainError, canAccess, isWorkingDate, localDateString, localParts, previousWorkingDate, scopesFor, workingHoursBetween, type Role, zonedTime } from '@retarget/shared';
+import { DomainError, ROLES, canAccess, isWorkingDate, localDateString, localParts, previousWorkingDate, scopesFor, workingHoursBetween, type Role, zonedTime } from '@retarget/shared';
 import { attendance, chatMessages, companies, departments, digests, financeRows, memberships, projects, shoots, taskEvents, tasks, users } from '../db/schema.js';
 import { bullets } from './ai.js';
 import { scheduleOf, type Company, type Ctx, type ResolvedActor } from './context.js';
@@ -563,50 +563,42 @@ async function digestFor(ctx: Ctx, c: Company, now: Date): Promise<number> {
   const p = localParts(now, c.timezone);
   const hm = `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
   if (hm < (c.digestTime ?? c.workStart)) return 0;
-  const [exists] = await ctx.db
-    .select({ id: digests.id })
+  const [existing] = await ctx.db
+    .select({ id: digests.id, sentAt: digests.sentAt })
     .from(digests)
     .where(and(eq(digests.companyId, c.id), eq(digests.day, today)));
-  if (exists) return 0;
+  if (existing?.sentAt) return 0;
 
+  // Fresh numbers at send time (a manual refresh earlier in the morning may be stale).
   const data = await buildDigest(ctx, c, now);
   const quiet = !data.items.length && !data.yesterday.done && !data.totals.open;
   const ai = quiet ? null : await aiAdvice(ctx, data);
-  const [row] = await ctx.db
+  const payload = data as unknown as Record<string, unknown>;
+  await ctx.db
     .insert(digests)
-    .values({
-      companyId: c.id,
-      day: today,
-      data: data as unknown as Record<string, unknown>,
-      ai,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing()
+    .values({ companyId: c.id, day: today, data: payload, ai, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({ target: [digests.companyId, digests.day], set: { data: payload, ai, updatedAt: now } });
+  // Claim the send exactly once.
+  const [claimed] = await ctx.db
+    .update(digests)
+    .set({ sentAt: now })
+    .where(and(eq(digests.companyId, c.id), eq(digests.day, today), isNull(digests.sentAt)))
     .returning({ id: digests.id });
-  if (!row || quiet) return 0;
+  if (!claimed || quiet) return 0;
 
   let n = 0;
   for (const r of await recipients(ctx, c.id)) {
-    const mayFinance = scopesFor(r.roles as Role[], 'finance.view').length > 0;
-    const view = mayFinance
-      ? data
-      : {
-          ...data,
-          finance: null,
-          items: data.items.filter((i) => !i.finance),
-        };
     try {
-      await ctx.notifier.direct(r.tg, digestText(view, ai), {
-        text: '📊 To‘liq tahlil',
-        startParam: 'digest',
-      });
+      const roles = r.roles.filter((x): x is Role => (ROLES as readonly string[]).includes(x));
+      const mayFinance = scopesFor(roles, 'finance.view').length > 0;
+      const view = mayFinance ? data : { ...data, finance: null, items: data.items.filter((i) => !i.finance) };
+      await ctx.notifier.direct(r.tg, digestText(view, ai), { text: '📊 To‘liq tahlil', startParam: 'digest' });
       n++;
     } catch (e) {
       console.error('[digest] send failed', r.userId, e);
     }
   }
-  await ctx.db.update(digests).set({ sentTo: n }).where(eq(digests.id, row.id));
+  await ctx.db.update(digests).set({ sentTo: n }).where(eq(digests.id, claimed.id));
   return n;
 }
 
