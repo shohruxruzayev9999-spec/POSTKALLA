@@ -129,7 +129,7 @@ export interface TaskDetail extends Omit<TaskListItem, 'assignee' | 'project' | 
   assignee: { id: string; name: string; username: string | null };
   reviewer: { id: string; name: string; username: string | null } | null;
   files: Array<{ id: string; revision: number; fileName: string | null; kind: string; createdAt: string }>;
-  events: Array<{ id: string; action: string; fromStatus: string | null; toStatus: string | null; comment: string | null; createdAt: string; actorName: string | null }>;
+  events: Array<{ id: string; action: string; fromStatus: string | null; toStatus: string | null; comment: string | null; createdAt: string; actorName: string | null; data?: { before?: Record<string, unknown>; after?: Record<string, unknown> } }>;
   canEdit: boolean;
   comments: Array<{ id: string; body: string; createdAt: string; userId: string; name: string; photoUrl: string | null }>;
   checklist: Array<{ id: string; text: string; done: boolean; position: number }>;
@@ -227,3 +227,4 @@ export interface ShootConflict {
   startTime: string;
   endTime: string;
 }
+

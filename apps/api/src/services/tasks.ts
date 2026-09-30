@@ -1,3 +1,4 @@
+import { calendarWrite, monthAt } from './projectMonths.js';
 import { and, asc, desc, eq, inArray, max, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -57,6 +58,7 @@ const displayName = (u: { firstName: string; lastName: string | null }) => [u.fi
 // ------------------------------------------------------------------------------------------
 
 export const createTaskInput = z.object({
+  plannedMonth: z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/).optional(),
   title: z.string().trim().min(2).max(200),
   description: z.string().trim().max(4000).optional(),
   projectId: z.string().uuid().nullable().optional(),
@@ -73,8 +75,15 @@ export const createTaskInput = z.object({
   columnId: z.string().uuid().nullable().optional(),
 });
 
-export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>) {
+async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>) {
   const data = createTaskInput.parse(input);
+  const currentMonth = monthAt(ctx.now(), actor.company.timezone);
+  if (data.plannedMonth && (!data.projectId || data.plannedMonth < currentMonth || Number(data.plannedMonth.slice(0, 4)) > Number(currentMonth.slice(0, 4)) + 2)) throw new DomainError('VALIDATION', 'Vazifa uchun joriy yoki kelgusi loyiha oyini tanlang');
+  if (data.projectId && data.plannedMonth && data.plannedMonth !== currentMonth) {
+    const { projectMonths } = await import('../db/schema.js');
+    const [period] = await ctx.db.select().from(projectMonths).where(and(eq(projectMonths.companyId, actor.companyId), eq(projectMonths.projectId, data.projectId), eq(projectMonths.month, data.plannedMonth), eq(projectMonths.archived, false)));
+    if (!period) throw new DomainError('VALIDATION', 'Avval loyiha oyini yarating');
+  }
   if (data.deadline.getTime() <= ctx.now().getTime()) throw new DomainError('VALIDATION', "Deadline kelajakda bo'lishi kerak");
 
   const [assignee] = await ctx.db
@@ -124,6 +133,7 @@ export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<
       .insert(tasks)
       .values({
         ...draft,
+        plannedMonth: data.projectId ? data.plannedMonth ?? currentMonth : null,
         number: (n ?? 0) + 1,
         title: data.title,
         description: data.description ?? null,
@@ -161,7 +171,7 @@ async function loadVisibleTask(ctx: Ctx, actor: ResolvedActor, taskId: string): 
   return t;
 }
 
-export async function actOnTask(ctx: Ctx, actor: ResolvedActor, taskId: string, action: TaskAction, comment?: string | null) {
+async function actOnTaskInner(ctx: Ctx, actor: ResolvedActor, taskId: string, action: TaskAction, comment?: string | null) {
   await loadVisibleTask(ctx, actor, taskId);
   const updated = await ctx.db.transaction(async (tx) => {
     await tx.execute(sql`select id from tasks where id = ${taskId} for update`);
@@ -182,6 +192,7 @@ export async function actOnTask(ctx: Ctx, actor: ResolvedActor, taskId: string, 
     const [u] = await tx
       .update(tasks)
       .set({
+        plannedMonth: action === 'REOPEN' && t!.projectId ? monthAt(now, actor.company.timezone) : t!.plannedMonth,
         status: result.status,
         revision: result.revision,
         // The card leaves its column when the status changes; the board shows it in the first
@@ -217,7 +228,7 @@ export const updateTaskInput = z.object({
   links: z.array(z.string().trim().url().max(500)).max(5).optional(),
 });
 
-export async function updateTask(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof updateTaskInput>) {
+async function updateTaskInner(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof updateTaskInput>) {
   const t = await loadVisibleTask(ctx, actor, taskId);
   const data = updateTaskInput.parse(input);
   const isCreator = t.createdBy === actor.userId;
@@ -246,7 +257,7 @@ export async function updateTask(ctx: Ctx, actor: ResolvedActor, taskId: string,
     actorUserId: actor.userId,
     action: data.deadline ? 'DEADLINE_CHANGE' : 'EDIT',
     comment: reason ?? null,
-    data: { before: { deadline: t.deadline, assigneeUserId: t.assigneeUserId }, after: fields },
+    data: { before: { deadline: t.deadline, assigneeUserId: t.assigneeUserId, reviewerUserId: t.reviewerUserId, title: t.title, priority: t.priority }, after: fields },
   });
   await publishCard(ctx, taskId);
   return u!;
@@ -258,7 +269,7 @@ export const addFileInput = z.object({
   kind: z.enum(['document', 'photo', 'video', 'link']).default('document'),
 });
 
-export async function addTaskFile(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof addFileInput>) {
+async function addTaskFileInner(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof addFileInput>) {
   const t = await loadVisibleTask(ctx, actor, taskId);
   if (t.assigneeUserId !== actor.userId && !managesBeyondOwn(actor, t)) throw new DomainError('FORBIDDEN', 'Faqat ijrochi fayl yuklaydi');
   const data = addFileInput.parse(input);
@@ -284,6 +295,7 @@ export async function listTasks(ctx: Ctx, actor: ResolvedActor, input: z.input<t
   const f = listTasksInput.parse(input);
   const assignee = alias(users, 'assignee');
   const conds = [eq(tasks.companyId, actor.companyId)];
+  if (!f.includeClosed) conds.push(or(sql`${tasks.plannedMonth} is null`, sql`${tasks.plannedMonth} <= ${monthAt(ctx.now(), actor.company.timezone)}`)!);
   if (f.status) conds.push(eq(tasks.status, f.status));
   if (f.projectId) conds.push(eq(tasks.projectId, f.projectId));
   if (f.departmentId) conds.push(eq(tasks.departmentId, f.departmentId));
@@ -415,3 +427,20 @@ async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
   }
 }
 
+
+
+export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>) {
+  return calendarWrite(ctx, actor, inner => createTaskInner(inner, actor, input));
+}
+
+export async function actOnTask(ctx: Ctx, actor: ResolvedActor, taskId: string, action: TaskAction, comment?: string | null) {
+  return calendarWrite(ctx, actor, inner => actOnTaskInner(inner, actor, taskId, action, comment));
+}
+
+export async function updateTask(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof updateTaskInput>) {
+  return calendarWrite(ctx, actor, inner => updateTaskInner(inner, actor, taskId, input));
+}
+
+export async function addTaskFile(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof addFileInput>) {
+  return calendarWrite(ctx, actor, inner => addTaskFileInner(inner, actor, taskId, input));
+}

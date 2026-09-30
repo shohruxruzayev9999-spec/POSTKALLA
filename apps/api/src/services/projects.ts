@@ -1,3 +1,4 @@
+import { calendarWrite } from './projectMonths.js';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DomainError, canAccess, checkAccess } from '@retarget/shared';
 import { z } from 'zod';
@@ -24,7 +25,7 @@ async function assertMembers(ctx: Ctx, companyId: string, userIds: string[]) {
   if (rows.length !== new Set(userIds).size) throw new DomainError('VALIDATION', "Ba'zi foydalanuvchilar kompaniya a'zosi emas");
 }
 
-export async function createProject(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof projectInput>) {
+async function createProjectInner(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof projectInput>) {
   // Creating a project is a company-level decision; a PM manages the projects they are given.
   checkAccess(actor, 'client.manage', { companyId: actor.companyId });
   const data = projectInput.parse(input);
@@ -47,22 +48,23 @@ export async function createProject(ctx: Ctx, actor: ResolvedActor, input: z.inp
   });
 }
 
-export async function updateProject(ctx: Ctx, actor: ResolvedActor, projectId: string, input: Partial<z.input<typeof projectInput>>) {
+async function updateProjectInner(ctx: Ctx, actor: ResolvedActor, projectId: string, input: Partial<z.input<typeof projectInput>>) {
   const [p] = await ctx.db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.companyId, actor.companyId)));
   if (!p) throw notFound('Loyiha');
-  checkAccess(actor, 'project.manage', { companyId: actor.companyId, projectId });
+  if (!actor.roles.some(r => r === 'OWNER' || r === 'ADMIN') && p.managerUserId !== actor.userId) throw new DomainError('FORBIDDEN', 'Ruxsat yo‘q. Faqat admin yoki loyiha mas’uli boshqaradi');
   const data = projectInput.partial().parse(input);
   if (data.managerUserId !== undefined && data.managerUserId !== p.managerUserId) {
-    checkAccess(actor, 'client.manage', { companyId: actor.companyId }); // only company level re-assigns the PM
+    if (data.managerUserId) await assertMembers(ctx, actor.companyId, [data.managerUserId]);
   }
   const { memberUserIds, clientName: _c, ...fields } = data;
   if (memberUserIds) await assertMembers(ctx, actor.companyId, memberUserIds);
   return ctx.db.transaction(async (tx) => {
     const [u] = await tx.update(projects).set(fields).where(eq(projects.id, projectId)).returning();
-    if (memberUserIds) {
-      const keep = [...new Set([...memberUserIds, ...(u!.managerUserId ? [u!.managerUserId] : [])])];
+    if (memberUserIds || data.managerUserId !== undefined) {
+      const existing = await tx.select().from(projectMembers).where(eq(projectMembers.projectId, projectId));
+      const keep = [...new Set([...(memberUserIds ?? existing.map(m => m.userId)), ...(u!.managerUserId ? [u!.managerUserId] : [])])];
       await tx.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
-      await tx.insert(projectMembers).values(keep.map((userId) => ({ projectId, userId })));
+      if (keep.length) await tx.insert(projectMembers).values(keep.map((userId) => ({ projectId, userId })));
     }
     await audit(tx as never, actor, 'project.update', 'project', projectId, data as Record<string, unknown>);
     return u!;
@@ -133,4 +135,13 @@ export async function bindChat(ctx: Ctx, actor: ResolvedActor, projectId: string
     await tx.update(projects).set({ telegramChatId: chatId, telegramChatTitle: title }).where(eq(projects.id, projectId));
   });
   await audit(ctx.db, actor, 'project.bindChat', 'project', projectId, { chatId, title });
+}
+
+
+export async function createProject(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof projectInput>) {
+  return calendarWrite(ctx, actor, inner => createProjectInner(inner, actor, input));
+}
+
+export async function updateProject(ctx: Ctx, actor: ResolvedActor, projectId: string, input: Partial<z.input<typeof projectInput>>) {
+  return calendarWrite(ctx, actor, inner => updateProjectInner(inner, actor, projectId, input));
 }

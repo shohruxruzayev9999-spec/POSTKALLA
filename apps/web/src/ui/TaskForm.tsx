@@ -58,7 +58,7 @@ function defaultDeadline(tz: string) {
   return zonedTime(p.year, p.month, p.day, 18, 0, tz);
 }
 
-export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departmentId }: { onDone: () => void; projectId?: string; assigneeUserId?: string; columnId?: string; departmentId?: string }) {
+export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departmentId, month, stayInProject = false }: { onDone: () => void; projectId?: string; assigneeUserId?: string; columnId?: string; departmentId?: string; month?: string; stayInProject?: boolean }) {
   const { session, fail, toast, can } = useApp();
   const tz = session.ctx.company.timezone;
   const qc = useQueryClient();
@@ -74,7 +74,7 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
     format: '',
     platform: '',
     links: '',
-    deadline: toLocalInput(defaultDeadline(tz), tz),
+    deadline: toLocalInput(month && month > toLocalInput(new Date(), tz).slice(0, 7) ? fromLocalInput(`${month}-01T18:00`, tz) : defaultDeadline(tz), tz),
     priority: 'MEDIUM',
     points: 1,
   });
@@ -87,6 +87,7 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
           title: form.title,
           description: form.description || undefined,
           projectId: form.projectId || null,
+          plannedMonth: month,
           assigneeUserId: form.assigneeUserId,
           deadline: fromLocalInput(form.deadline, tz).toISOString(),
           priority: form.priority,
@@ -104,7 +105,7 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
       void qc.invalidateQueries({ queryKey: ['tasks'] });
       void qc.invalidateQueries({ queryKey: ['projects'] });
       onDone();
-      go('tasks', t.id);
+      if (!stayInProject) go('tasks', t.id);
     },
     onError: fail,
   });
@@ -118,7 +119,7 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
         <input className="input" autoFocus value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Masalan: Oktabr aksiyasi uchun banner" maxLength={200} />
       </Field>
       <Field label="Loyiha">
-        <select className="input" value={form.projectId} onChange={(e) => set('projectId', e.target.value)}>
+        <select className="input" disabled={!!month} value={form.projectId} onChange={(e) => set('projectId', e.target.value)}>
           <option value="">— Loyihasiz —</option>
           {(projects.data ?? []).filter((p) => p.status === 'ACTIVE').map((p) => (
             <option key={p.id} value={p.id}>{p.name}{p.telegramChatId ? ' · 💬' : ''}</option>
@@ -187,3 +188,4 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
     </div>
   );
 }
+

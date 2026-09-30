@@ -7,6 +7,7 @@ import type { Project } from '../lib/types';
 import { Empty, Field, Icon, Ring, Sheet, Skeleton } from '../ui/kit';
 import { go, useApp } from '../ui/state';
 import { TaskForm } from './Tasks';
+import { ProjectDetail } from './ProjectDetail';
 
 const COLORS = ['#34D399', '#A3E635', '#14B8A6', '#60A5FA', '#A78BFA', '#F472B6', '#FB923C', '#FACC15'];
 const FILTERS = [
@@ -16,7 +17,7 @@ const FILTERS = [
   { key: 'DONE', label: 'Yakunlangan' },
 ];
 
-export function Projects() {
+export function Projects({ projectId }: { projectId?: string }) {
   const { can } = useApp();
   const projects = useProjects();
   const [filter, setFilter] = useState('ACTIVE');
@@ -24,6 +25,7 @@ export function Projects() {
   const [taskFor, setTaskFor] = useState<string | null>(null);
   const list = (projects.data ?? []).filter((p) => (filter === 'risk' ? p.status === 'ACTIVE' && p.taskOverdue > 0 : p.status === filter));
 
+  if (projectId) return <ProjectDetail id={projectId} />;
   return (
     <div className="stack" style={{ gap: 14 }}>
       <div className="row between">
@@ -77,7 +79,7 @@ function ProjectCard({ p, onEdit, onTask }: { p: Project; onEdit: () => void; on
   return (
     <div className="card stack" style={{ gap: 12, position: 'relative', overflow: 'hidden' }}>
       <span style={{ position: 'absolute', inset: '0 0 auto 0', height: 3, background: p.color }} />
-      <div className="row" style={{ gap: 14 }}>
+      <button className="project-open row" style={{ gap: 14 }} onClick={() => go("projects", p.id)} aria-label={`${p.name} loyihasini ochish`}>
         <Ring value={p.progress} size={62} stroke={7} tone={p.taskOverdue > 0 ? 'amber' : 'green'}>
           <span className="xb" style={{ fontSize: 14 }}>{p.progress}%</span>
         </Ring>
@@ -88,7 +90,7 @@ function ProjectCard({ p, onEdit, onTask }: { p: Project; onEdit: () => void; on
             <Icon name="chat" size={12} /> {p.telegramChatId ? p.telegramChatTitle || 'Guruh ulangan' : 'Guruh ulanmagan'}
           </div>
         </div>
-      </div>
+      </button>
       <div className="row small" style={{ gap: 14 }}>
         <span><b>{p.taskDone}</b>/<span className="muted">{p.taskTotal}</span> bajarildi</span>
         {p.taskOverdue > 0 && <span className="b" style={{ color: 'var(--danger)' }}>{p.taskOverdue} kechikkan</span>}
@@ -114,8 +116,9 @@ function ProjectCard({ p, onEdit, onTask }: { p: Project; onEdit: () => void; on
   );
 }
 
-function ProjectForm({ project, onDone }: { project: Project | null; onDone: () => void }) {
-  const { fail, toast, can } = useApp();
+export function ProjectForm({ project, onDone }: { project: Project | null; onDone: () => void }) {
+  const { fail, toast, can, session } = useApp();
+  const canAssign = can("client.manage", "COMPANY") || project?.managerUserId === session.user.id;
   const qc = useQueryClient();
   const members = useMembers();
   const [form, setForm] = useState({
@@ -133,7 +136,7 @@ function ProjectForm({ project, onDone }: { project: Project | null; onDone: () 
         color: form.color,
         status: form.status,
         memberUserIds: form.memberUserIds,
-        ...(can('client.manage', 'COMPANY') ? { managerUserId: form.managerUserId || null } : {}),
+        ...(canAssign ? { managerUserId: form.managerUserId || null } : {}),
         ...(project ? {} : { clientName: form.clientName || undefined }),
       };
       return project ? api(`/projects/${project.id}`, { method: 'PATCH', body }) : api('/projects', { method: 'POST', body });
@@ -158,7 +161,7 @@ function ProjectForm({ project, onDone }: { project: Project | null; onDone: () 
           <input className="input" value={form.clientName} onChange={(e) => setForm({ ...form, clientName: e.target.value })} placeholder="Mijoz kompaniyasi" />
         </Field>
       )}
-      {can('client.manage', 'COMPANY') && (
+      {canAssign && (
         <Field label="Loyiha menejeri (tekshiruvchi)">
           <select className="input" value={form.managerUserId} onChange={(e) => setForm({ ...form, managerUserId: e.target.value })}>
             <option value="">— O‘zim —</option>
@@ -209,3 +212,4 @@ function ProjectForm({ project, onDone }: { project: Project | null; onDone: () 
     </div>
   );
 }
+

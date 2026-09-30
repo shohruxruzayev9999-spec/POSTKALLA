@@ -5,11 +5,13 @@ import { ACTION, dateShort, leftText, PRIORITY, STATUS, when } from '../lib/form
 import type { BoardColumn, TaskDetail } from '../lib/types';
 import { Avatar, Empty, Field, Icon, Skeleton, StatusPill } from './kit';
 import { useApp } from './state';
+import { useMembers } from '../lib/queries';
 import { DeadlineEditor } from './TaskForm';
 
 export function TaskView({ id, board = 'main' }: { id: string; board?: string }) {
   const { fail, toast, session } = useApp();
   const qc = useQueryClient();
+  const members = useMembers();
   const task = useQuery({ queryKey: ['task', id], queryFn: () => api<TaskDetail>(`/tasks/${id}`) });
   const [commentFor, setCommentFor] = useState<string | null>(null);
   const [comment, setComment] = useState('');
@@ -149,6 +151,8 @@ export function TaskView({ id, board = 'main' }: { id: string; board?: string })
               <div>
                 <b>{e.actorName ?? 'Tizim'}</b> <span className="muted">{eventText(e)}</span>
               </div>
+              {typeof e.data?.after?.deadline === 'string' && <div className="xs muted">{when(String(e.data.before?.deadline), tz)} → {when(String(e.data.after.deadline), tz)}</div>}
+              {typeof e.data?.after?.assigneeUserId === 'string' && <div className="xs muted">Ijrochi: {members.data?.find(m => m.userId === e.data?.before?.assigneeUserId)?.name ?? '—'} → {members.data?.find(m => m.userId === e.data?.after?.assigneeUserId)?.name ?? '—'}</div>}
               {e.comment && <div style={{ marginTop: 3 }}>💬 {e.comment}</div>}
               <div className="xs faint">{when(e.createdAt, tz)}</div>
             </div>
@@ -355,3 +359,4 @@ function Comments({ task }: { task: TaskDetail }) {
     </div>
   );
 }
+

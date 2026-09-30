@@ -170,7 +170,7 @@ function Shell() {
       case 'tasks':
         return <Tasks openId={route.id} />;
       case 'projects':
-        return <Projects />;
+        return <Projects key={route.id ?? "list"} projectId={route.id} />;
       case 'team':
         return <Team openId={route.id} />;
       case 'profile':
@@ -321,3 +321,4 @@ function Outside() {
     </div>
   );
 }
+
