@@ -11,6 +11,7 @@ import * as att from '../services/attendance.js';
 import { loadActor, type Ctx, type ResolvedActor } from '../services/context.js';
 import * as org from '../services/org.js';
 import * as projects from '../services/projects.js';
+import * as months from '../services/projectMonths.js';
 import * as tasks from '../services/tasks.js';
 import * as boards from '../services/boards.js';
 import * as shoots from '../services/shoots.js';
@@ -162,6 +163,11 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
     return { ok: true };
   });
 
+  app.get('/api/projects/:id/months', async req => months.listProjectMonths(ctx, await actorOf(req), idParam.parse(req.params).id));
+  const periodParam = z.object({ id: z.string().uuid(), month: months.monthInput });
+  app.get('/api/projects/:id/months/:month', async req => { const p = periodParam.parse(req.params); return months.getProjectMonth(ctx, await actorOf(req), p.id, p.month); });
+  app.post('/api/projects/:id/months', async req => months.createProjectMonth(ctx, await actorOf(req), idParam.parse(req.params).id, z.object({ month: months.monthInput }).parse(req.body).month));
+  app.delete('/api/projects/:id/months/:month', async req => { const p = periodParam.parse(req.params); return months.deleteProjectMonth(ctx, await actorOf(req), p.id, p.month); });
   app.get('/api/projects', async (req) => projects.listProjects(ctx, await actorOf(req)));
   app.post('/api/projects', async (req) => projects.createProject(ctx, await actorOf(req), req.body as never));
   app.patch('/api/projects/:id', async (req) => projects.updateProject(ctx, await actorOf(req), idParam.parse(req.params).id, req.body as never));
@@ -294,3 +300,4 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
 
   return app;
 }
+

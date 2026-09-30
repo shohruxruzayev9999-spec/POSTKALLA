@@ -497,3 +497,15 @@ select.fin-cell { cursor: pointer; }
 .bl-feat li { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; line-height: 1.35; }
 .bl-feat li svg { flex-shrink: 0; margin-top: 1px; color: var(--accent-ink); }
 .bl-sum { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); }
+
+
+.project-open { border: 0; background: none; color: inherit; text-align: left; padding: 0; cursor: pointer; width: 100%; font: inherit; }
+.project-open:hover { color: var(--accent-ink); }
+.project-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 8px; }
+.project-detail { gap: 18px; }
+.project-header { padding: 24px; }
+.project-header p { margin-top: 8px; }
+.project-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; }
+.project-stats strong { display: block; font-size: 30px; margin-top: 6px; }
+.project-detail .board { min-height: 310px; }
+@media (max-width: 600px) { .project-header { padding: 16px; } .project-stats { grid-template-columns: repeat(2, 1fr); } .project-detail .page-title { font-size: 24px; } }

@@ -156,6 +156,7 @@ export const tasks = pgTable(
     number: integer('number').notNull(),
     projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
     departmentId: uuid('department_id').references(() => departments.id, { onDelete: 'set null' }),
+    plannedMonth: text('planned_month'),
     title: text('title').notNull(),
     description: text('description'),
     status: text('status').notNull().default('NEW'),
@@ -500,3 +501,14 @@ export const paymentRequests = pgTable(
   },
   (t) => [index('payment_requests_company_idx').on(t.companyId, t.createdAt)],
 );
+
+
+/** Immutable closed-month snapshots; deleted archives retain a tombstone. */
+export const projectMonths = pgTable('project_months', {
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  month: text('month').notNull(),
+  archived: boolean('archived').notNull().default(false),
+  deleted: boolean('deleted').notNull().default(false),
+  snapshot: jsonb('snapshot').$type<{ tasks: Record<string, unknown>[]; columns: Record<string, unknown>[] }>().notNull().default({ tasks: [], columns: [] }),
+}, t => [primaryKey({ columns: [t.projectId, t.month] }), index('project_months_company_idx').on(t.companyId)]);

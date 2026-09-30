@@ -20,17 +20,18 @@ export function useColumns(board: string) {
 }
 
 /** Kanban board with editable columns. Drag = the same action as a button (server decides). */
-export function Board({ board, tasks, showAssignee = true, departmentId, openRoute = 'tasks' }: { board: string; tasks: TaskListItem[]; showAssignee?: boolean; departmentId?: string; openRoute?: string }) {
+export function Board({ board, tasks, showAssignee = true, departmentId, openRoute = 'tasks', projectId, month, readOnly = false, columns, onOpenTask }: { board: string; tasks: TaskListItem[]; showAssignee?: boolean; departmentId?: string; openRoute?: string; projectId?: string; month?: string; readOnly?: boolean; columns?: BoardColumn[]; onOpenTask?: (id: string) => void }) {
   const { can, fail, toast } = useApp();
   const qc = useQueryClient();
-  const cols = useColumns(board);
+  const liveCols = useColumns(board);
+  const cols = { data: columns ?? liveCols.data };
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [needComment, setNeedComment] = useState<{ taskId: string; col: BoardColumn } | null>(null);
   const [comment, setComment] = useState('');
   const [editCol, setEditCol] = useState<BoardColumn | 'new' | null>(null);
   const [addTo, setAddTo] = useState<BoardColumn | null>(null);
-  const canEdit = can('task.manage', 'COMPANY') || can('task.manage', 'DEPARTMENT') || can('task.manage', 'PROJECT');
+  const canEdit = !readOnly && (can('task.manage', 'COMPANY') || can('task.manage', 'DEPARTMENT') || can('task.manage', 'PROJECT'));
 
   const move = useMutation({
     mutationFn: (v: { taskId: string; col: BoardColumn; comment?: string }) => api(`/tasks/${v.taskId}/move`, { method: 'POST', body: { columnId: v.col.id, comment: v.comment } }),
@@ -67,6 +68,7 @@ export function Board({ board, tasks, showAssignee = true, departmentId, openRou
 
   const onDrop = (e: DragEvent, col: BoardColumn) => {
     e.preventDefault();
+    if (readOnly) return;
     setOver(null);
     const id = e.dataTransfer.getData('text/task') || dragId;
     setDragId(null);
@@ -103,7 +105,7 @@ export function Board({ board, tasks, showAssignee = true, departmentId, openRou
               </div>
               <div className="board-col-body">
                 {items.map((t) => (
-                  <BoardCard key={t.id} t={t} showAssignee={showAssignee} openRoute={openRoute} onDragStart={(e) => {
+                  <BoardCard key={t.id} t={t} showAssignee={showAssignee} openRoute={openRoute} onOpen={onOpenTask} onDragStart={readOnly ? undefined : (e) => {
                     e.dataTransfer.setData('text/task', t.id);
                     setDragId(t.id);
                   }} />
@@ -140,6 +142,9 @@ export function Board({ board, tasks, showAssignee = true, departmentId, openRou
       <Sheet open={!!addTo} onClose={() => setAddTo(null)} title="Yangi vazifa">
         {addTo && (
           <TaskForm
+            projectId={projectId}
+            month={month}
+            stayInProject={!!projectId}
             columnId={addTo.id}
             departmentId={departmentId}
             onDone={() => {
@@ -153,10 +158,10 @@ export function Board({ board, tasks, showAssignee = true, departmentId, openRou
   );
 }
 
-export function BoardCard({ t, showAssignee, onDragStart, openRoute = 'tasks' }: { t: TaskListItem; showAssignee?: boolean; onDragStart?: (e: DragEvent) => void; openRoute?: string }) {
+export function BoardCard({ t, showAssignee, onDragStart, openRoute = 'tasks', onOpen }: { t: TaskListItem; showAssignee?: boolean; onDragStart?: (e: DragEvent) => void; openRoute?: string; onOpen?: (id: string) => void }) {
   const closed = t.status === 'DONE' || t.status === 'CANCELLED';
   return (
-    <div className="board-card" draggable={!!onDragStart} onDragStart={onDragStart} onClick={() => go(openRoute, t.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && go(openRoute, t.id)}>
+    <div className="board-card" draggable={!!onDragStart} onDragStart={onDragStart} onClick={() => (onOpen ? onOpen(t.id) : go(openRoute, t.id))} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && (onOpen ? onOpen(t.id) : go(openRoute, t.id))}>
       <div className="row" style={{ gap: 6, alignItems: 'flex-start' }}>
         <span className={`prio prio-${t.priority}`} style={{ height: 16, marginTop: 2 }} />
         <div className="grow b small" style={{ lineHeight: 1.35 }}>
@@ -237,3 +242,4 @@ function ColumnForm({ board, col, onDone }: { board: string; col: BoardColumn | 
     </div>
   );
 }
+

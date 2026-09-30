@@ -2,6 +2,7 @@ import { Bot } from 'grammy';
 import { markBlocked, registerHandlers, TelegramNotifier } from './bot/bot.js';
 import { connect } from './db/client.js';
 import { buildServer } from './http/server.js';
+import { runProjectMonths } from './services/projectMonths.js';
 import { runReminders } from './jobs/reminders.js';
 import { runShootReminders } from './services/shoots.js';
 import { runDigests } from './services/digest.js';
@@ -72,6 +73,7 @@ async function main() {
     if (running) return;
     running = true;
     try {
+      await runProjectMonths(ctx);
       const r = await runReminders(ctx);
       if (r.sent || r.skipped) app.log.info(r, 'reminders');
       const shootsSent = await runShootReminders(ctx);
@@ -102,3 +104,4 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+

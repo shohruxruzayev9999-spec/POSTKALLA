@@ -1,3 +1,4 @@
+import { calendarWrite } from './projectMonths.js';
 import { and, asc, eq, inArray, max, sql } from 'drizzle-orm';
 import { DomainError, actionToReach, scopesFor, type TaskStatus } from '@retarget/shared';
 import { z } from 'zod';
@@ -81,7 +82,7 @@ export const columnInput = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
 });
 
-export async function createColumn(ctx: Ctx, actor: ResolvedActor, board: string, input: z.input<typeof columnInput>) {
+async function createColumnInner(ctx: Ctx, actor: ResolvedActor, board: string, input: z.input<typeof columnInput>) {
   assertCanEditColumns(actor);
   const b = boardSchema.parse(board);
   const data = columnInput.parse(input);
@@ -109,7 +110,7 @@ async function loadColumn(db: Db, companyId: string, id: string) {
   return c;
 }
 
-export async function updateColumn(ctx: Ctx, actor: ResolvedActor, id: string, input: { name?: string; color?: string }) {
+async function updateColumnInner(ctx: Ctx, actor: ResolvedActor, id: string, input: { name?: string; color?: string }) {
   assertCanEditColumns(actor);
   await loadColumn(ctx.db, actor.companyId, id);
   const data = columnInput.pick({ name: true, color: true }).partial().parse(input);
@@ -118,7 +119,7 @@ export async function updateColumn(ctx: Ctx, actor: ResolvedActor, id: string, i
 }
 
 /** Reorder within a board. Columns may not leave their status group order constraints — any order is allowed. */
-export async function reorderColumns(ctx: Ctx, actor: ResolvedActor, board: string, ids: string[]) {
+async function reorderColumnsInner(ctx: Ctx, actor: ResolvedActor, board: string, ids: string[]) {
   assertCanEditColumns(actor);
   const b = boardSchema.parse(board);
   const cols = await ensureColumns(ctx.db, actor.companyId, b);
@@ -129,7 +130,7 @@ export async function reorderColumns(ctx: Ctx, actor: ResolvedActor, board: stri
   return ensureColumns(ctx.db, actor.companyId, b);
 }
 
-export async function deleteColumn(ctx: Ctx, actor: ResolvedActor, id: string) {
+async function deleteColumnInner(ctx: Ctx, actor: ResolvedActor, id: string) {
   assertCanEditColumns(actor);
   const col = await loadColumn(ctx.db, actor.companyId, id);
   const siblings = await ctx.db
@@ -150,7 +151,7 @@ export async function deleteColumn(ctx: Ctx, actor: ResolvedActor, id: string) {
  * Drag & drop. Inside one status it only changes placement; across statuses it performs the
  * same action a button would (so no one can approve their own work by dragging).
  */
-export async function moveTask(ctx: Ctx, actor: ResolvedActor, taskId: string, columnId: string, comment?: string | null) {
+async function moveTaskInner(ctx: Ctx, actor: ResolvedActor, taskId: string, columnId: string, comment?: string | null) {
   const t = await loadTask(ctx.db, actor.companyId, taskId);
   if (!canSeeTask(actor, t)) throw notFound('Vazifa');
   const col = await loadColumn(ctx.db, actor.companyId, columnId);
@@ -177,7 +178,7 @@ export async function moveTask(ctx: Ctx, actor: ResolvedActor, taskId: string, c
 
 // ------------------------------------------------------------------------------------------ comments
 
-export async function addComment(ctx: Ctx, actor: ResolvedActor, taskId: string, body: string) {
+async function addCommentInner(ctx: Ctx, actor: ResolvedActor, taskId: string, body: string) {
   const t = await loadTask(ctx.db, actor.companyId, taskId);
   if (!canSeeTask(actor, t)) throw notFound('Vazifa');
   const text = z.string().trim().min(1).max(4000).parse(body);
@@ -217,7 +218,7 @@ async function assertCanWorkOn(ctx: Ctx, actor: ResolvedActor, taskId: string) {
   return t;
 }
 
-export async function addChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId: string, text: string) {
+async function addChecklistItemInner(ctx: Ctx, actor: ResolvedActor, taskId: string, text: string) {
   await assertCanWorkOn(ctx, actor, taskId);
   const value = z.string().trim().min(1).max(300).parse(text);
   const [{ n }] = (await ctx.db.select({ n: max(taskChecklist.position) }).from(taskChecklist).where(eq(taskChecklist.taskId, taskId))) as [{ n: number | null }];
@@ -225,7 +226,7 @@ export async function addChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId: s
   return i!;
 }
 
-export async function updateChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId: string, itemId: string, input: { done?: boolean; text?: string }) {
+async function updateChecklistItemInner(ctx: Ctx, actor: ResolvedActor, taskId: string, itemId: string, input: { done?: boolean; text?: string }) {
   await assertCanWorkOn(ctx, actor, taskId);
   const data = z.object({ done: z.boolean().optional(), text: z.string().trim().min(1).max(300).optional() }).parse(input);
   const [i] = await ctx.db
@@ -237,7 +238,7 @@ export async function updateChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId
   return i;
 }
 
-export async function deleteChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId: string, itemId: string) {
+async function deleteChecklistItemInner(ctx: Ctx, actor: ResolvedActor, taskId: string, itemId: string) {
   await assertCanWorkOn(ctx, actor, taskId);
   await ctx.db.delete(taskChecklist).where(and(eq(taskChecklist.id, itemId), eq(taskChecklist.taskId, taskId)));
 }
@@ -267,3 +268,40 @@ export async function cardCounts(db: Db, taskIds: string[]) {
   return out;
 }
 
+
+
+export async function createColumn(ctx: Ctx, actor: ResolvedActor, board: string, input: z.input<typeof columnInput>) {
+  return calendarWrite(ctx, actor, inner => createColumnInner(inner, actor, board, input));
+}
+
+export async function updateColumn(ctx: Ctx, actor: ResolvedActor, id: string, input: { name?: string; color?: string }) {
+  return calendarWrite(ctx, actor, inner => updateColumnInner(inner, actor, id, input));
+}
+
+export async function reorderColumns(ctx: Ctx, actor: ResolvedActor, board: string, ids: string[]) {
+  return calendarWrite(ctx, actor, inner => reorderColumnsInner(inner, actor, board, ids));
+}
+
+export async function deleteColumn(ctx: Ctx, actor: ResolvedActor, id: string) {
+  return calendarWrite(ctx, actor, inner => deleteColumnInner(inner, actor, id));
+}
+
+export async function moveTask(ctx: Ctx, actor: ResolvedActor, taskId: string, columnId: string, comment?: string | null) {
+  return calendarWrite(ctx, actor, inner => moveTaskInner(inner, actor, taskId, columnId, comment));
+}
+
+export async function addComment(ctx: Ctx, actor: ResolvedActor, taskId: string, body: string) {
+  return calendarWrite(ctx, actor, inner => addCommentInner(inner, actor, taskId, body));
+}
+
+export async function addChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId: string, text: string) {
+  return calendarWrite(ctx, actor, inner => addChecklistItemInner(inner, actor, taskId, text));
+}
+
+export async function updateChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId: string, itemId: string, input: { done?: boolean; text?: string }) {
+  return calendarWrite(ctx, actor, inner => updateChecklistItemInner(inner, actor, taskId, itemId, input));
+}
+
+export async function deleteChecklistItem(ctx: Ctx, actor: ResolvedActor, taskId: string, itemId: string) {
+  return calendarWrite(ctx, actor, inner => deleteChecklistItemInner(inner, actor, taskId, itemId));
+}
