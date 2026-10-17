@@ -19,6 +19,8 @@ export interface Ctx {
   now: () => Date;
   /** Optional language model (ANTHROPIC_API_KEY); every use has a rule-based fallback. */
   ai?: AiClient;
+  /** Set inside a calendarWrite transaction: queues work (Telegram, …) until after the commit. */
+  afterCommit?: (fn: (ctx: Ctx) => Promise<unknown>) => void;
 }
 
 export type Company = typeof companies.$inferSelect;

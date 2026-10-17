@@ -78,3 +78,23 @@ export function getLocation(): Promise<{ lat: number; lng: number } | null> {
     else lm.init(ask);
   });
 }
+
+// Telegram has one Back button; pages and sheets stack their handlers on it. The topmost
+// (an open sheet over a sub-page) wins, and the button hides when nothing is left.
+const backStack: Array<() => void> = [];
+const onBack = () => backStack.at(-1)?.();
+let backBound = false;
+export function pushBack(handler: () => void): () => void {
+  if (!tg) return () => undefined;
+  if (!backBound) {
+    tg.BackButton.onClick(onBack);
+    backBound = true;
+  }
+  backStack.push(handler);
+  tg.BackButton.show();
+  return () => {
+    const i = backStack.lastIndexOf(handler);
+    if (i >= 0) backStack.splice(i, 1);
+    if (!backStack.length) tg?.BackButton.hide();
+  };
+}

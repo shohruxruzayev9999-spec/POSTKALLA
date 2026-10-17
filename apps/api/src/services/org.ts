@@ -2,10 +2,10 @@ import { randomBytes } from 'node:crypto';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   DomainError,
-  ROLE_RANK,
   ROLES,
   assertCanGrantRole,
   assertNotSelf,
+  assertOutranks,
   assertOwnerRemains,
   canAccess,
   checkAccess,
@@ -322,11 +322,7 @@ export async function updateMember(ctx: Ctx, actor: ResolvedActor, targetUserId:
     checkAccess(actor, 'employee.manage', target);
     assertNotSelf(actor, 'employee.manage', targetUserId);
     // Nobody touches a colleague at or above their own rank.
-    if (!actor.roles.includes('OWNER')) {
-      const ownRank = Math.max(...actor.roles.map((r) => ROLE_RANK[r]));
-      const theirRank = Math.max(...m.roles.map((r) => ROLE_RANK[r as Role] ?? 0));
-      if (theirRank >= ownRank) throw new DomainError('ROLE_RANK_TOO_HIGH', "O'zingizdan yuqori yoki teng hodimni o'zgartira olmaysiz");
-    }
+    assertOutranks(actor, m.roles);
     if (data.departmentId !== undefined && data.departmentId !== null) {
       // Moving someone into a department requires rights on the destination too.
       checkAccess(actor, 'employee.manage', { companyId: actor.companyId, departmentId: data.departmentId });
@@ -342,6 +338,7 @@ export async function updateMember(ctx: Ctx, actor: ResolvedActor, targetUserId:
   if (salary !== undefined) {
     checkAccess(actor, 'salary.manage', target);
     assertNotSelf(actor, 'salary.manage', targetUserId);
+    assertOutranks(actor, m.roles);
   }
 
   return ctx.db.transaction(async (tx) => {

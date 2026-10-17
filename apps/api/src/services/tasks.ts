@@ -1,5 +1,5 @@
-import { calendarWrite, monthAt } from './projectMonths.js';
-import { and, asc, desc, eq, inArray, max, or, sql } from 'drizzle-orm';
+import { afterCommit, calendarWrite, monthAt } from './projectMonths.js';
+import { and, asc, desc, eq, inArray, max, notInArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   DomainError,
@@ -22,6 +22,8 @@ import type { TaskCard } from './notifier.js';
 import { cardCounts, listChecklist, listComments } from './boards.js';
 
 export type TaskRow = typeof tasks.$inferSelect;
+
+const CLOSED_STATUSES = ['DONE', 'CANCELLED'];
 
 export function taskTarget(t: Pick<TaskRow, 'companyId' | 'departmentId' | 'projectId' | 'assigneeUserId' | 'reviewerUserId' | 'createdBy'>): Target {
   return {
@@ -104,6 +106,13 @@ async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<ty
     if (!department) throw notFound("Bo'lim");
   }
 
+  // Who checks the work and what it is worth are a manager's call: someone creating a task for
+  // themself cannot pick a friendly reviewer or inflate the points (KPI would be gamed).
+  const lead = managesBeyondOwn(actor, { companyId: actor.companyId, departmentId, projectId: data.projectId ?? null, assigneeUserId: data.assigneeUserId, reviewerUserId: null, createdBy: actor.userId } as TaskRow);
+  if (!lead) {
+    data.reviewerUserId = undefined;
+    data.points = 1;
+  }
   // Default reviewer: the project manager, else the department head — never the assignee.
   let reviewerUserId = data.reviewerUserId ?? project?.managerUserId ?? department?.headUserId ?? null;
   if (reviewerUserId === data.assigneeUserId) reviewerUserId = department?.headUserId !== data.assigneeUserId ? (department?.headUserId ?? null) : null;
@@ -154,7 +163,7 @@ async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<ty
     return t!;
   });
 
-  await publishCard(ctx, task.id);
+  await afterCommit(ctx, (c) => publishCard(c, task.id));
   return task;
 }
 
@@ -207,10 +216,12 @@ async function actOnTaskInner(ctx: Ctx, actor: ResolvedActor, taskId: string, ac
     return u!;
   });
 
-  await publishCard(ctx, updated.id);
-  const card = await taskCard(ctx.db, updated.id);
-  const [me] = await ctx.db.select().from(users).where(eq(users.id, actor.userId));
-  await safe(() => ctx.notifier.taskChanged(card, action, me ? displayName(me) : '', comment?.trim() || null));
+  await afterCommit(ctx, async (c) => {
+    await publishCard(c, updated.id);
+    const card = await taskCard(c.db, updated.id);
+    const [me] = await c.db.select().from(users).where(eq(users.id, actor.userId));
+    await safe(() => c.notifier.taskChanged(card, action, me ? displayName(me) : '', comment?.trim() || null));
+  });
   return updated;
 }
 
@@ -259,7 +270,7 @@ async function updateTaskInner(ctx: Ctx, actor: ResolvedActor, taskId: string, i
     comment: reason ?? null,
     data: { before: { deadline: t.deadline, assigneeUserId: t.assigneeUserId, reviewerUserId: t.reviewerUserId, title: t.title, priority: t.priority }, after: fields },
   });
-  await publishCard(ctx, taskId);
+  await afterCommit(ctx, (c) => publishCard(c, taskId));
   return u!;
 }
 
@@ -287,6 +298,8 @@ export const listTasksInput = z.object({
   assigneeUserId: z.string().uuid().optional(),
   mine: z.coerce.boolean().optional(),
   includeClosed: z.coerce.boolean().optional(),
+  /** With includeClosed: how far back closed tasks go (open ones are always all listed). */
+  closedDays: z.coerce.number().int().min(1).max(730).optional(),
   /** Department board: only tasks of departments in this section. */
   section: z.enum(['DESIGN', 'MEDIA']).optional(),
 });
@@ -294,8 +307,8 @@ export const listTasksInput = z.object({
 export async function listTasks(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof listTasksInput> = {}) {
   const f = listTasksInput.parse(input);
   const assignee = alias(users, 'assignee');
-  const conds = [eq(tasks.companyId, actor.companyId)];
-  if (!f.includeClosed) conds.push(or(sql`${tasks.plannedMonth} is null`, sql`${tasks.plannedMonth} <= ${monthAt(ctx.now(), actor.company.timezone)}`)!);
+  // Work planned for a later project month stays on that month's board until the month comes.
+  const conds = [eq(tasks.companyId, actor.companyId), or(sql`${tasks.plannedMonth} is null`, sql`${tasks.plannedMonth} <= ${monthAt(ctx.now(), actor.company.timezone)}`)!];
   if (f.status) conds.push(eq(tasks.status, f.status));
   if (f.projectId) conds.push(eq(tasks.projectId, f.projectId));
   if (f.departmentId) conds.push(eq(tasks.departmentId, f.departmentId));
@@ -309,18 +322,21 @@ export async function listTasks(ctx: Ctx, actor: ResolvedActor, input: z.input<t
     conds.push(inArray(tasks.departmentId, secDeps.map((d) => d.id)));
   }
   if (f.mine) conds.push(or(eq(tasks.assigneeUserId, actor.userId), eq(tasks.reviewerUserId, actor.userId))!);
-  if (!f.includeClosed && !f.status) {
-    // Closed tasks only from the last 14 days keep the board light.
-    conds.push(or(inArray(tasks.status, ['NEW', 'IN_PROGRESS', 'REVIEW', 'RETURNED', 'BLOCKED']), sql`${tasks.updatedAt} > ${new Date(ctx.now().getTime() - 14 * 86_400_000)}`)!);
-  }
-  const rows = await ctx.db
-    .select({ t: tasks, project: projects.name, projectColor: projects.color, a: assignee })
-    .from(tasks)
-    .innerJoin(assignee, eq(assignee.id, tasks.assigneeUserId))
-    .leftJoin(projects, eq(projects.id, tasks.projectId))
-    .where(and(...conds))
-    .orderBy(asc(tasks.deadline))
-    .limit(1000);
+  // Open work is always listed in full; closed work only for a recent window (14 days on the
+  // plain board), newest first, so a growing history never pushes new tasks out of the list.
+  const closedSince = new Date(ctx.now().getTime() - (f.includeClosed ? (f.closedDays ?? 60) : 14) * 86_400_000);
+  const select = () =>
+    ctx.db
+      .select({ t: tasks, project: projects.name, projectColor: projects.color, a: assignee })
+      .from(tasks)
+      .innerJoin(assignee, eq(assignee.id, tasks.assigneeUserId))
+      .leftJoin(projects, eq(projects.id, tasks.projectId));
+  const open = await select().where(and(...conds, notInArray(tasks.status, CLOSED_STATUSES)));
+  const closedRows = await select()
+    .where(and(...conds, inArray(tasks.status, CLOSED_STATUSES), sql`${tasks.updatedAt} > ${closedSince}`))
+    .orderBy(desc(tasks.updatedAt))
+    .limit(500);
+  const rows = [...open, ...closedRows].sort((x, y) => x.t.deadline.getTime() - y.t.deadline.getTime());
   const visible = rows.filter((r) => canSeeTask(actor, r.t));
   const counts = await cardCounts(ctx.db, visible.map((r) => r.t.id));
   return visible

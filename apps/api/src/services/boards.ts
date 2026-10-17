@@ -1,4 +1,4 @@
-import { calendarWrite } from './projectMonths.js';
+import { afterCommit, calendarWrite } from './projectMonths.js';
 import { and, asc, eq, inArray, max, sql } from 'drizzle-orm';
 import { DomainError, actionToReach, scopesFor, type TaskStatus } from '@retarget/shared';
 import { z } from 'zod';
@@ -187,11 +187,13 @@ async function addCommentInner(ctx: Ctx, actor: ResolvedActor, taskId: string, b
   const card = await taskCard(ctx.db, taskId);
   const [me] = await ctx.db.select().from(users).where(eq(users.id, actor.userId));
   const recipients = [card.assignee, card.reviewer].filter((p): p is NonNullable<typeof p> => !!p && p.id !== actor.userId);
-  for (const p of recipients) {
-    await ctx.notifier
-      .direct(p.telegramId, `💬 <b>#${card.number} · ${escapeHtml(card.title)}</b>\n${escapeHtml(me?.firstName ?? '')}: ${escapeHtml(text.slice(0, 500))}`)
-      .catch(() => undefined);
-  }
+  await afterCommit(ctx, async (c) => {
+    for (const p of recipients) {
+      await c.notifier
+        .direct(p.telegramId, `💬 <b>#${card.number} · ${escapeHtml(card.title)}</b>\n${escapeHtml(me?.firstName ?? '')}: ${escapeHtml(text.slice(0, 500))}`)
+        .catch(() => undefined);
+    }
+  });
   return c!;
 }
 

@@ -21,6 +21,7 @@ import * as reports from '../services/reports.js';
 import * as digest from '../services/digest.js';
 import * as billing from '../services/billing.js';
 import { recordGroupMessage, type IncomingMessage } from '../services/chatlog.js';
+import { checkHealth } from '../services/health.js';
 import { reportPdf, sendReport } from '../services/reportSend.js';
 
 export interface HttpConfig {
@@ -45,7 +46,9 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
       // Short-lived report links carry a token in the query string — never write it to logs.
       serializers: { req: (req) => ({ method: req.method, url: req.url.replace(/([?&]t=)[^&]+/, '$1[redacted]'), remoteAddress: req.ip }) },
     },
-    trustProxy: true,
+    // Only the host nginx (loopback / Docker network) may set X-Forwarded-For; trusting every
+    // hop would let a client fake its IP and slip past the rate limits.
+    trustProxy: ['127.0.0.1', '::1', '172.16.0.0/12', '10.0.0.0/8'],
     bodyLimit: 256 * 1024,
   });
 
@@ -77,7 +80,12 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   const idParam = z.object({ id: z.string().uuid() });
   const inviteLink = (token: string) => `https://t.me/${cfg.botUsername}/app?startapp=inv_${token}`;
 
-  app.get('/api/health', async () => ({ ok: true, time: ctx.now().toISOString() }));
+  // Polled by the Docker healthcheck and the external uptime workflow: 503 when the database,
+  // the reminder worker or the bot is down.
+  app.get('/api/health', { config: { rateLimit: false } }, async (_req, reply) => {
+    const h = await checkHealth(ctx);
+    return reply.status(h.ok ? 200 : 503).send({ ...h, time: ctx.now().toISOString() });
+  });
 
   // ---------------------------------------------------------------- auth
   app.post('/api/auth/telegram', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {

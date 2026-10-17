@@ -1,0 +1,20 @@
+name: Uptime
+# External check: GitHub emails the repo owner when this fails (API, database, worker or bot down).
+on:
+  schedule: [{ cron: '*/15 * * * *' }]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET /api/health
+        env: { URL: "${{ vars.HEALTH_URL || 'https://postkalla.3-122-101-164.nip.io/api/health' }}" }
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 15 "$URL"; then exit 0; fi
+            sleep 20
+          done
+          echo "::error::Postkalla is down: $URL"
+          exit 1

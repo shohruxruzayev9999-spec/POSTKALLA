@@ -11,6 +11,7 @@ Telegram Mini App ERP for marketing agencies (multi-tenant SaaS). Language of UI
 ## Rules that must never regress (covered by tests)
 - Visibility: everyone sees the work (tasks, projects, team, attendance, KPI); money (finance, others' salaries) only CEO/Finance/HR; private 1:1 tasks only giver, assignee, reviewer, Owner, never posted to groups.
 - Roles/salary/attendance: nobody edits their own; nobody grants or touches a rank ≥ their own; ≥1 Owner always.
+- No Telegram/HTTP call inside a transaction or lock: use `afterCommit(ctx, fn)` in services.
 - Tenant isolation: every query filters by `company_id`; actor is loaded from DB per request (never from the token).
 - Nobody approves their own task. Deadline moves need a manager + reason; motivation uses `original_deadline`.
 - Reminders count working hours only; one live reminder per chat (previous is deleted); 3 overdue reminders → project manager (+1 wh) → CEO (+1 wh, only if the status did not change).
@@ -40,4 +41,6 @@ Every push to `main` runs workflow "Server" (tests → build → ship; also manu
 - [x] Hisobotlar: project/company report from ERP data + stored Telegram group messages (`chat_messages`, bot must be group admin); preview page, PDF (pdfkit + bundled Manrope TTF in `apps/api/assets/fonts`), send to Telegram; optional AI summary (ANTHROPIC_API_KEY)
 - [x] AI agent (kunlik tahlil): every working day at `digestTime` (default work start) — rule-based recommendations + optional AI advice, Telegram DM to leads (CEO/admin/PM/marketer/dept heads), dashboard card and page; money only to finance viewers, never sent to the model; recommends only, writes nothing but its own `digests` row
 - [x] Obuna: plans Start/Biznes/Premium (`packages/shared/src/plans.ts`), 1/3/6/12-month prepay discounts, 14-day trial for new agencies (agencies that existed before billing = Premium, no end date), payment request → platform admin confirms in bot or app (PLATFORM_ADMIN_TG_IDS, default: owners of the oldest company); no card data is ever collected; limits are warnings only
+- [x] Loyiha oylik Kanbani: open months read live from `tasks`, a month is frozen once at rollover (company lock exclusive only then, writes share it); closed history filed under the month it was finished; Telegram side effects run after commit (`afterCommit`)
+- [x] Audit fixes (Oct 2026): rank guard on salary/attendance, self-created tasks get default reviewer + 1 point, private 1:1 escalation only to giver/reviewer/CEO, board lists all open + recent closed tasks, `/api/health` (db, worker, bot) + Uptime workflow + Telegram alerts, checked backups with monthly restore test, pre-deploy backup and automatic rollback
 - [ ] ru/en translations, data migration from the old ERP, Payme/Click gateway

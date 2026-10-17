@@ -239,6 +239,17 @@ export function assertCanGrantRole(actor: Actor, role: Role): void {
   }
 }
 
+/**
+ * Nobody touches the record (roles, salary, attendance) of a colleague at or above their own
+ * rank. Owners are exempt — except for their own record, which assertNotSelf covers.
+ */
+export function assertOutranks(actor: Actor, targetRoles: readonly string[]): void {
+  if (actor.roles.includes('OWNER')) return;
+  const ownRank = Math.max(...actor.roles.map((r) => ROLE_RANK[r]));
+  const theirRank = Math.max(0, ...targetRoles.map((r) => ROLE_RANK[r as Role] ?? 0));
+  if (theirRank >= ownRank) throw new DomainError('ROLE_RANK_TOO_HIGH', "O'zingizdan yuqori yoki teng hodimni o'zgartira olmaysiz");
+}
+
 /** A company must always keep at least one active Owner. */
 export function assertOwnerRemains(remainingOwnerCount: number): void {
   if (remainingOwnerCount < 1) {
