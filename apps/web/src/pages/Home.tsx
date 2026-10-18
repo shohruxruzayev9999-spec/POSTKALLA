@@ -6,6 +6,7 @@ import type { Dashboard, TaskListItem } from '../lib/types';
 import { Avatar, Bar, Empty, Icon, Ring, scoreTone, Skeleton } from '../ui/kit';
 import { go, useApp } from '../ui/state';
 import { TaskRow } from '../ui/TaskRow';
+import { Escalations, MyReminders, ProjectsProgress, TodayAtWork, TodayShoots } from '../ui/HomeBlocks';
 import { DigestPanel, LEAD_ROLES } from './Digest';
 import { planStatus } from '@retarget/shared';
 
@@ -77,6 +78,9 @@ export function Home() {
         <div className="stack" style={{ gap: 14 }}>
           {(session.ctx.roles.some((r) => LEAD_ROLES.includes(r)) || session.ctx.headOfDepartmentIds.length > 0) && <DigestPanel />}
           <AttendanceCard />
+          {dash.data && dash.data.team.length > 1 && <TodayAtWork d={dash.data} />}
+          <Escalations />
+          <MyReminders />
 
           {dash.isPending ? (
             <Skeleton h={150} n={1} />
@@ -149,7 +153,11 @@ export function Home() {
           )}
         </div>
 
-        {dash.data && dash.data.team.length > 1 && <TeamPanel d={dash.data} />}
+        <div className="stack" style={{ gap: 14 }}>
+          <TodayShoots />
+          <ProjectsProgress />
+          {dash.data && dash.data.team.length > 1 && <TeamPanel d={dash.data} />}
+        </div>
       </div>
 
       {dash.data && <MotivationPanel d={dash.data} />}

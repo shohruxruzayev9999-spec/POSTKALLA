@@ -181,3 +181,21 @@ describe('review fixes', () => {
     expect(canSeeDigest(owner)).toBe(true);
   });
 });
+
+describe('home alerts', () => {
+  it('shows escalated tasks and my live reminders, within task visibility', async () => {
+    const a = await agency();
+    const owner = await a.actor(a.users.ceo.id);
+    const t = await createTask(a.ctx, owner, { title: 'Kech qolgan', assigneeUserId: a.users.aziz.id, deadline: in2days(a.clock.t) });
+    const { reminderLog, reminderMessages, tasks } = await import('../db/schema.js');
+    const [row] = await a.db.select().from(tasks).where(eq(tasks.id, t.id));
+    await a.db.insert(reminderLog).values({ taskId: t.id, stepKey: 'escalate-ceo', deadline: row!.deadline, sent: true });
+    await a.db.insert(reminderMessages).values({ taskId: t.id, chatId: a.users.aziz.telegramId, messageId: 1 });
+    const { homeAlerts } = await import('./analytics.js');
+    const o = await homeAlerts(a.ctx, owner);
+    expect(o.escalations.map((x) => [x.title, x.level])).toEqual([['Kech qolgan', 'CEO']]);
+    expect(o.reminders).toEqual([]);
+    const aziz = await a.actor(a.users.aziz.id);
+    expect((await homeAlerts(a.ctx, aziz)).reminders.map((x) => x.title)).toEqual(['Kech qolgan']);
+  });
+});

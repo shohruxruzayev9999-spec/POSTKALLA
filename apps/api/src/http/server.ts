@@ -304,6 +304,7 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.put('/api/attendance', async (req) => att.editAttendance(ctx, await actorOf(req), req.body as never));
 
   app.get('/api/dashboard', async (req) => analytics.dashboard(ctx, await actorOf(req)));
+  app.get('/api/home/alerts', async (req) => analytics.homeAlerts(ctx, await actorOf(req)));
 
   return app;
 }

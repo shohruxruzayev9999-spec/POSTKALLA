@@ -182,3 +182,54 @@ export async function memberScores(ctx: Ctx, actor: ResolvedActor, userId: strin
   checkAccess(actor, 'kpi.view', { companyId: actor.companyId, departmentId: m.departmentId, ownerUserIds: [userId] });
   return (await scoresFor(ctx, actor.company, [userId], month)).get(userId)!;
 }
+
+/**
+ * Home page alerts: tasks that escalated (3 overdue reminders → manager / CEO) and the live
+ * reminders sitting in my own Telegram chat. Visibility follows the task rules.
+ */
+export async function homeAlerts(ctx: Ctx, actor: ResolvedActor) {
+  const { canSeeTask } = await import('./tasks.js');
+  const { projects, reminderLog, reminderMessages } = await import('../db/schema.js');
+  const open = inArray(tasks.status, ['NEW', 'IN_PROGRESS', 'REVIEW', 'RETURNED', 'BLOCKED']);
+  const row = (t: typeof tasks.$inferSelect, project: string | null, first: string, last: string | null) => ({
+    id: t.id,
+    number: t.number,
+    title: t.title,
+    deadline: t.deadline,
+    status: t.status,
+    project,
+    assignee: [first, last].filter(Boolean).join(' '),
+  });
+
+  const esc = await ctx.db
+    .select({ t: tasks, step: reminderLog.stepKey, project: projects.name, first: users.firstName, last: users.lastName })
+    .from(reminderLog)
+    .innerJoin(tasks, and(eq(tasks.id, reminderLog.taskId), eq(tasks.deadline, reminderLog.deadline)))
+    .innerJoin(users, eq(users.id, tasks.assigneeUserId))
+    .leftJoin(projects, eq(projects.id, tasks.projectId))
+    .where(and(eq(tasks.companyId, actor.companyId), open, eq(reminderLog.sent, true), inArray(reminderLog.stepKey, ['escalate-manager', 'escalate-ceo'])));
+  const byTask = new Map<string, ReturnType<typeof row> & { level: 'MANAGER' | 'CEO' }>();
+  for (const e of esc) {
+    if (!canSeeTask(actor, e.t)) continue;
+    const level = e.step === 'escalate-ceo' ? 'CEO' : 'MANAGER';
+    const prev = byTask.get(e.t.id);
+    if (!prev || level === 'CEO') byTask.set(e.t.id, { ...row(e.t, e.project, e.first, e.last), level });
+  }
+
+  const [me] = await ctx.db.select({ tg: users.telegramId }).from(users).where(eq(users.id, actor.userId));
+  const mineRows = me
+    ? await ctx.db
+        .select({ t: tasks, sentAt: reminderMessages.sentAt, project: projects.name, first: users.firstName, last: users.lastName })
+        .from(reminderMessages)
+        .innerJoin(tasks, eq(tasks.id, reminderMessages.taskId))
+        .innerJoin(users, eq(users.id, tasks.assigneeUserId))
+        .leftJoin(projects, eq(projects.id, tasks.projectId))
+        .where(and(eq(reminderMessages.chatId, me.tg), eq(tasks.companyId, actor.companyId), open))
+    : [];
+  const reminders = mineRows
+    .filter((r) => canSeeTask(actor, r.t))
+    .map((r) => ({ ...row(r.t, r.project, r.first, r.last), sentAt: r.sentAt, overdue: r.t.deadline < ctx.now() }))
+    .sort((a, b) => +b.sentAt - +a.sentAt);
+
+  return { escalations: [...byTask.values()].sort((a, b) => +a.deadline - +b.deadline), reminders };
+}
