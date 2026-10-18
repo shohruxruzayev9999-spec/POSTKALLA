@@ -127,7 +127,10 @@ export async function listShoots(ctx: Ctx, actor: ResolvedActor, q: { from: stri
     ? await ctx.db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, photoUrl: users.photoUrl }).from(users).where(inArray(users.id, crewIds))
     : [];
   const byId = new Map(people.map((p) => [p.id, { id: p.id, name: [p.firstName, p.lastName].filter(Boolean).join(' '), photoUrl: p.photoUrl }]));
-  return rows.map(({ s, projectName, projectColor }) => ({
+  // "Only my projects": shoots of other projects stay hidden.
+  return rows
+    .filter(({ s }) => !s.projectId || canAccess(actor, 'project.view', { companyId: actor.companyId, projectId: s.projectId }))
+    .map(({ s, projectName, projectColor }) => ({
     id: s.id,
     title: s.title,
     type: s.type,

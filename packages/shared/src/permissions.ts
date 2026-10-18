@@ -161,6 +161,11 @@ function leader(actor: Actor): boolean {
   return actor.roles.includes('OWNER') || actor.roles.includes('ADMIN');
 }
 
+/** "Only my projects" is on: company-wide views built from all projects are closed to them. */
+export function ownProjectsOnly(actor: Actor): boolean {
+  return actor.perms?.projectsView === 'OWN' && !leader(actor);
+}
+
 /** Effective switches, with role defaults filled in — what the UI shows as on/off. */
 export function effectivePerms(actor: Actor): Required<MemberPerms> {
   const p = leader(actor) ? {} : (actor.perms ?? {});
@@ -231,7 +236,7 @@ export function canAccess(actor: Actor, action: Action, target: Target): boolean
   if (actor.companyId !== target.companyId) return false; // hard tenant isolation
   // "Only my projects": a project — and a project's task — is visible only when the actor is on
   // that project or owns the task. Tasks outside any project stay visible as before.
-  if (actor.perms?.projectsView === 'OWN' && !leader(actor) && (action === 'project.view' || action === 'task.view')) {
+  if (ownProjectsOnly(actor) && (action === 'project.view' || action === 'task.view')) {
     if (action === 'project.view' && target.projectId === undefined) return false;
     if (target.projectId && !actor.projectIds.includes(target.projectId) && !target.ownerUserIds?.includes(actor.userId)) return false;
     if (action === 'project.view' && target.projectId === null) return false;

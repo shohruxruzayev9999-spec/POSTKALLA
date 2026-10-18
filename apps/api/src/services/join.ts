@@ -162,6 +162,13 @@ export async function approveJoin(ctx: Ctx, actor: ResolvedActor, id: string, in
   assertCanGrantRole(actor, data.role as Role);
 
   await ctx.db.transaction(async (tx) => {
+    // Claim the request first: of two approvers deciding at once, only one gets the row.
+    const [claimed] = await tx
+      .update(joinRequests)
+      .set({ status: 'APPROVED', decidedBy: actor.userId, decidedAt: ctx.now() })
+      .where(and(eq(joinRequests.id, r.id), eq(joinRequests.status, 'PENDING')))
+      .returning({ id: joinRequests.id });
+    if (!claimed) throw new DomainError('VALIDATION', "So'rov allaqachon ko'rib chiqilgan");
     const [m] = await tx.select().from(memberships).where(and(eq(memberships.companyId, actor.companyId), eq(memberships.userId, r.userId)));
     if (m) {
       await tx.update(memberships).set({ status: 'ACTIVE', roles: [data.role], departmentId, position: data.position ?? m.position }).where(eq(memberships.id, m.id));
@@ -175,7 +182,6 @@ export async function approveJoin(ctx: Ctx, actor: ResolvedActor, id: string, in
         joinedAt: ctx.now(),
       });
     }
-    await tx.update(joinRequests).set({ status: 'APPROVED', decidedBy: actor.userId, decidedAt: ctx.now() }).where(eq(joinRequests.id, r.id));
     await audit(tx as unknown as Db, actor, 'join.approve', 'join_request', r.id, { userId: r.userId, role: data.role, departmentId });
   });
   const [u] = await ctx.db.select().from(users).where(eq(users.id, r.userId));
@@ -190,7 +196,12 @@ export async function rejectJoin(ctx: Ctx, actor: ResolvedActor, id: string) {
   const { r, g } = await loadRequest(ctx.db, actor.companyId, id);
   if (r.status !== 'PENDING') throw new DomainError('VALIDATION', "So'rov allaqachon ko'rib chiqilgan");
   checkAccess(actor, 'employee.manage', groupTarget(actor.companyId, g?.departmentId ?? null));
-  await ctx.db.update(joinRequests).set({ status: 'REJECTED', decidedBy: actor.userId, decidedAt: ctx.now() }).where(eq(joinRequests.id, r.id));
+  const [claimed] = await ctx.db
+    .update(joinRequests)
+    .set({ status: 'REJECTED', decidedBy: actor.userId, decidedAt: ctx.now() })
+    .where(and(eq(joinRequests.id, r.id), eq(joinRequests.status, 'PENDING')))
+    .returning({ id: joinRequests.id });
+  if (!claimed) throw new DomainError('VALIDATION', "So'rov allaqachon ko'rib chiqilgan");
   await audit(ctx.db, actor, 'join.reject', 'join_request', r.id, { userId: r.userId });
   return { ok: true };
 }

@@ -134,3 +134,50 @@ describe('per-member switches', () => {
     expect(m2.perms).toEqual({ assignTasks: true });
   });
 });
+
+describe('review fixes', () => {
+  it('assignTasks=false also blocks re-assigning an existing task', async () => {
+    const a = await agency();
+    const owner = await a.actor(a.users.ceo.id);
+    const t = await createTask(a.ctx, owner, { title: 'Bannerlar', assigneeUserId: a.users.aziz.id, deadline: in2days(a.clock.t) });
+    await updateMember(a.ctx, owner, a.users.head.id, { perms: { assignTasks: false } });
+    const head = await a.actor(a.users.head.id);
+    const { updateTask } = await import('./tasks.js');
+    await expect(updateTask(a.ctx, head, t.id, { assigneeUserId: a.users.bekzod.id })).rejects.toThrow(/berish/);
+  });
+
+  it('a request can be decided only once', async () => {
+    const a = await agency();
+    const owner = await a.actor(a.users.ceo.id);
+    const admin = await a.actor(a.users.admin.id);
+    await registerGroup(a.ctx, a.users.ceo.id, a.company.id, -110, 'Jamoa');
+    const u = await makeUser(a.db, 'Ikki');
+    const r = (await requestJoin(a.ctx, u.id, -110)) as { requestId: string };
+    const results = await Promise.allSettled([approveJoin(a.ctx, owner, r.requestId, {}), rejectJoin(a.ctx, admin, r.requestId)]);
+    expect(results.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
+    const [jr] = await a.db.select().from(joinRequests).where(eq(joinRequests.userId, u.id));
+    const [m] = await a.db.select().from(memberships).where(eq(memberships.userId, u.id));
+    expect(jr!.status === 'APPROVED').toBe(!!m);
+  });
+
+  it('"only my projects" hides other shoots, the company report and the digest', async () => {
+    const a = await agency();
+    const owner = await a.actor(a.users.ceo.id);
+    const mine = await createProject(a.ctx, owner, { name: 'Mening', managerUserId: a.users.pm.id, memberUserIds: [a.users.aziz.id] });
+    const other = await createProject(a.ctx, owner, { name: 'Boshqa', managerUserId: a.users.pm.id });
+    const { createShoot, listShoots } = await import('./shoots.js');
+    const day = '2026-09-23';
+    await createShoot(a.ctx, owner, { title: 'Meniki', projectId: mine.id, day, startTime: '10:00', endTime: '11:00', crew: [] });
+    await createShoot(a.ctx, owner, { title: 'Begona', projectId: other.id, day, startTime: '12:00', endTime: '13:00', crew: [] });
+    await updateMember(a.ctx, owner, a.users.pm.id, { perms: { projectsView: 'OWN' } });
+    await updateMember(a.ctx, owner, a.users.aziz.id, { perms: { projectsView: 'OWN' } });
+    const aziz = await a.actor(a.users.aziz.id);
+    expect((await listShoots(a.ctx, aziz, { from: day, to: day })).map((s) => s.title)).toEqual(['Meniki']);
+    const pm = await a.actor(a.users.pm.id);
+    const { buildReport } = await import('./reports.js');
+    await expect(buildReport(a.ctx, pm, { from: '2026-09-01', to: '2026-09-30' } as never)).rejects.toThrow(/Ruxsat/);
+    const { canSeeDigest } = await import('./digest.js');
+    expect(canSeeDigest(pm)).toBe(false);
+    expect(canSeeDigest(owner)).toBe(true);
+  });
+});
