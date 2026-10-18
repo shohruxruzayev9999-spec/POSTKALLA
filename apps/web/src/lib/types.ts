@@ -110,6 +110,9 @@ export interface TaskListItem {
   completedAt: string | null;
   createdAt: string;
   originalDeadline: string;
+  createdBy: string;
+  /** DAILY | WEEKLY | MONTHLY — a repeating task. */
+  recurrence: string | null;
 }
 export interface BoardColumn {
   id: string;

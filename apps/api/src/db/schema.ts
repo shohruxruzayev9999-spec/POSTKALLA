@@ -177,6 +177,10 @@ export const tasks = pgTable(
     links: text('links').array().notNull().default(sql`'{}'`),
     /** 1:1 task: visible only to its giver, assignee, reviewer and the Owner; never posted to a group. */
     isPrivate: boolean('is_private').notNull().default(false),
+    /** Repeating task: DAILY | WEEKLY | MONTHLY. The next copy is made once this one is due or closed. */
+    recurrence: text('recurrence'),
+    /** The task this one was repeated from (set on the copy; a task is repeated at most once). */
+    repeatedFromId: uuid('repeated_from_id').references((): AnyPgColumn => tasks.id, { onDelete: 'set null' }),
     completedAt: ts('completed_at'),
     /** Where the task card lives in Telegram (edited in place on every change). */
     groupChatId: bigint('group_chat_id', { mode: 'number' }),
@@ -189,6 +193,7 @@ export const tasks = pgTable(
     index('tasks_company_status_idx').on(t.companyId, t.status),
     index('tasks_assignee_idx').on(t.assigneeUserId),
     index('tasks_deadline_idx').on(t.deadline),
+    uniqueIndex('tasks_repeated_from_uq').on(t.repeatedFromId),
   ],
 );
 

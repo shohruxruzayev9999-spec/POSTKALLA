@@ -19,6 +19,7 @@ import { Digest } from './pages/Digest';
 import { Billing } from './pages/Billing';
 import { Tasks } from './pages/Tasks';
 import { Team } from './pages/Team';
+import { Search } from './pages/Search';
 import { Icon, Ring } from './ui/kit';
 import { AppProvider, go, useApp, useRoute, useThemeBoot } from './ui/state';
 
@@ -160,6 +161,7 @@ export const NAV: NavItem[] = [
   { name: 'projects', label: 'Loyihalar', icon: 'folder', section: 'main' },
   { name: 'team', label: 'Jamoa', icon: 'team', section: 'main' },
   { name: 'attendance', label: 'Davomat', icon: 'clock', section: 'main' },
+  { name: 'search', label: 'Qidiruv', icon: 'search', section: 'main' },
   { name: 'digest', label: 'AI tahlil', icon: 'sparkle', section: 'main', when: (_can, ctx) => ctx.roles.some((r) => ['OWNER', 'ADMIN', 'PM', 'MARKETER'].includes(r)) || ctx.headOfDepartmentIds.length > 0 },
   { name: 'design', label: 'Dizayn', icon: 'palette', section: 'work' },
   { name: 'media', label: 'Media', icon: 'film', section: 'work' },
@@ -212,6 +214,8 @@ function Shell() {
         return <OnboardingDocs openId={route.id} />;
       case 'settings':
         return <Settings />;
+      case 'search':
+        return <Search />;
       case 'more':
         return <More items={nav.filter((n) => !TABS.includes(n.name))} />;
       default:

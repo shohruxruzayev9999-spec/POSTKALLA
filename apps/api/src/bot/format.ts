@@ -1,6 +1,7 @@
 import { localParts } from '@retarget/shared';
 import type { ReminderStep } from '@retarget/shared';
 import type { Person, TaskCard } from '../services/notifier.js';
+import type { MyTaskLine, TaskDraft } from '../services/capture.js';
 
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -52,4 +53,40 @@ export function reminderText(c: TaskCard, step: ReminderStep, tz?: string): stri
     default:
       return `⏰ ${who}, ${head} muddati o‘tdi (${fmtDate(c.deadline, tz)}). ${step.overdueCount}-eslatma.`;
   }
+}
+
+const WEEKDAY = ['', 'dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba', 'yakshanba'];
+
+/** The draft shown after /task or a forward, before the author presses "Saqlash". */
+export function draftText(d: TaskDraft, now = new Date()): string {
+  const p = localParts(d.deadline, d.timezone);
+  const lines = [
+    '📝 <b>Vazifa qoralamasi</b>',
+    '',
+    `<b>${esc(d.title)}</b>`,
+    d.description ? `<i>${esc(d.description.length > 300 ? `${d.description.slice(0, 300)}…` : d.description)}</i>` : null,
+    '',
+    `👤 ${esc(d.assigneeName)}`,
+    `⏰ ${fmtDate(d.deadline, d.timezone)} (${WEEKDAY[p.weekday]})${d.deadlineSet ? '' : ' — avtomatik'}${d.deadline <= now ? '  <b>· o‘tib ketgan</b>' : ''}`,
+    d.projectName ? `📁 ${esc(d.projectName)}` : null,
+    d.companyOptions.length > 1 ? `🏢 ${esc(d.companyOptions.find((o) => o.id === d.companyId)?.name ?? '')}` : null,
+    ...d.unknownMentions.map((u) => `⚠️ @${esc(u)} jamoada topilmadi — ijrochi: siz`),
+    '',
+    '<i>Tekshiring va «Saqlash»ni bosing. Muddatni pastdagi tugmalar bilan o‘zgartirish mumkin.</i>',
+  ];
+  return lines.filter((l) => l !== null).join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+/** /my and /due in a private chat. */
+export function myTasksText(rows: MyTaskLine[], mode: 'my' | 'due', now = new Date()): string {
+  const title = mode === 'my' ? '📋 <b>Mening ochiq vazifalarim</b>' : '⏰ <b>Muddati yaqin vazifalar</b> (48 soat ichida va o‘tganlar)';
+  if (!rows.length) return `${title}\n\n${mode === 'my' ? 'Ochiq vazifa yo‘q 🎉' : 'Yaqin 48 soatda muddat yo‘q 👌'}`;
+  const many = new Set(rows.map((r) => r.company)).size > 1;
+  const shown = rows.slice(0, 20).map((r) => {
+    const mark = r.overdue ? '🔴' : r.deadline.getTime() - now.getTime() < 24 * 3_600_000 ? '🟡' : '🟢';
+    const extra = [r.toReview ? '👀 tekshirish' : null, r.status === 'RETURNED' ? '↩️ qaytarilgan' : null, many ? esc(r.company) : null].filter(Boolean).join(' · ');
+    return `${mark} <b>#${r.number}</b> ${esc(r.title)}\n      ${fmtDate(r.deadline, r.timezone)}${r.overdue ? ' · <b>muddati o‘tdi</b>' : ''}${extra ? ` · ${extra}` : ''}`;
+  });
+  const more = rows.length > 20 ? `\n\n…yana ${rows.length - 20} ta — ilovada` : '';
+  return `${title} — ${rows.length} ta\n\n${shown.join('\n')}${more}`;
 }

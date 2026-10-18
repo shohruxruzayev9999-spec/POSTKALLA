@@ -6,6 +6,7 @@ import { runProjectMonths } from './services/projectMonths.js';
 import { runReminders } from './jobs/reminders.js';
 import { runShootReminders } from './services/shoots.js';
 import { runDigests } from './services/digest.js';
+import { runRecurring } from './services/recurring.js';
 import type { Ctx } from './services/context.js';
 import { NullNotifier } from './services/notifier.js';
 import { anthropicClient } from './services/ai.js';
@@ -60,9 +61,22 @@ async function main() {
   await app.listen({ host: '0.0.0.0', port: Number(process.env.PORT ?? 8080) });
 
   if (bot) {
-    await bot.api.setMyCommands([{ command: 'start', description: 'Ilovani ochish' }]).catch(() => undefined);
     await bot.api
-      .setMyCommands([{ command: 'bind', description: 'Guruhni loyihaga ulash' }], { scope: { type: 'all_group_chats' } })
+      .setMyCommands([
+        { command: 'start', description: 'Ilovani ochish' },
+        { command: 'task', description: 'Vazifa: /task ertaga 17:00 @username matn' },
+        { command: 'my', description: 'Mening ochiq vazifalarim' },
+        { command: 'due', description: 'Muddati yaqin vazifalar' },
+      ])
+      .catch(() => undefined);
+    await bot.api
+      .setMyCommands(
+        [
+          { command: 'task', description: 'Vazifa: xabarga javob qilib yoki /task ertaga 17:00 @username matn' },
+          { command: 'bind', description: 'Guruhni loyihaga ulash' },
+        ],
+        { scope: { type: 'all_group_chats' } },
+      )
       .catch(() => undefined);
     if (process.env.WEBAPP_URL) {
       await bot.api.setChatMenuButton({ menu_button: { type: 'web_app', text: 'Ochish', web_app: { url: process.env.WEBAPP_URL } } }).catch(() => undefined);
@@ -86,6 +100,8 @@ async function main() {
     running = true;
     try {
       await job('project months', () => runProjectMonths(ctx));
+      const repeated = await job('repeating tasks', () => runRecurring(ctx));
+      if (repeated) app.log.info({ repeated }, 'repeating tasks');
       const r = await job('reminders', () => runReminders(ctx));
       if (r && (r.sent || r.skipped)) app.log.info(r, 'reminders');
       const shootsSent = await job('shoot reminders', () => runShootReminders(ctx));

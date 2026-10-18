@@ -1,4 +1,4 @@
-import { localParts, zonedTime } from '@retarget/shared';
+import { QUICK_DEADLINES, RECURRENCES, RECURRENCE_LABEL, localParts, quickDeadline, quickDeadlineLabel, zonedTime, type WorkSchedule } from '@retarget/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../lib/api';
@@ -52,6 +52,23 @@ export function DeadlineEditor({ task, onDone }: { task: TaskDetail; onDone: () 
   );
 }
 
+export function scheduleOf(c: { timezone: string; workDays?: number[]; workStart?: string; workEnd?: string; holidays?: string[] }): WorkSchedule {
+  return { timezone: c.timezone, workDays: c.workDays ?? [1, 2, 3, 4, 5, 6], start: c.workStart ?? '10:00', end: c.workEnd ?? '18:00', holidays: c.holidays ?? [] };
+}
+
+/** "Bugun 18:00 · Ertaga 10:00 · …" under a deadline input (same buttons as the bot draft). */
+export function QuickDeadlines({ schedule, onPick }: { schedule: WorkSchedule; onPick: (d: Date) => void }) {
+  return (
+    <div className="row wrap" style={{ gap: 6, marginTop: 6 }}>
+      {QUICK_DEADLINES.map((q) => (
+        <button key={q} type="button" className="chip" style={{ height: 28, fontSize: 12 }} onClick={() => onPick(quickDeadline(q, new Date(), schedule))}>
+          {quickDeadlineLabel(q, schedule)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function defaultDeadline(tz: string) {
   const now = new Date();
   const p = localParts(new Date(now.getTime() + 86_400_000), tz);
@@ -77,6 +94,7 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
     deadline: toLocalInput(month && month > toLocalInput(new Date(), tz).slice(0, 7) ? fromLocalInput(`${month}-01T18:00`, tz) : defaultDeadline(tz), tz),
     priority: 'MEDIUM',
     points: 1,
+    recurrence: '',
   });
   const set = (k: keyof typeof form, v: string | number | boolean) => setForm((f) => ({ ...f, [k]: v }));
   const create = useMutation({
@@ -98,6 +116,7 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
           links: form.links.split(/\s+/).map((l) => l.trim()).filter((l) => /^https?:\/\//.test(l)).slice(0, 5),
           columnId: columnId ?? null,
           departmentId: departmentId ?? undefined,
+          recurrence: form.recurrence || null,
         },
       }),
     onSuccess: (t) => {
@@ -139,6 +158,7 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
       <div className="grid grid-2">
         <Field label="Deadline">
           <input className="input" type="datetime-local" value={form.deadline} onChange={(e) => set('deadline', e.target.value)} />
+          {!month && <QuickDeadlines schedule={scheduleOf(session.ctx.company)} onPick={(d) => set('deadline', toLocalInput(d, tz))} />}
         </Field>
         <Field label="Muhimlik">
           <select className="input" value={form.priority} onChange={(e) => set('priority', e.target.value)}>
@@ -171,6 +191,14 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
       </Field>
       <Field label="Havolalar (ixtiyoriy)" hint="Figma, Drive, referens — har birini yangi qatordan, 5 tagacha.">
         <textarea className="input" style={{ minHeight: 60 }} value={form.links} onChange={(e) => set('links', e.target.value)} placeholder="https://…" />
+      </Field>
+      <Field label="Takrorlanish" hint="Muddati kelganda yoki yopilganda keyingisi o‘zi yaratiladi.">
+        <select className="input" value={form.recurrence} onChange={(e) => set('recurrence', e.target.value)}>
+          <option value="">Takrorlanmaydi</option>
+          {RECURRENCES.map((r) => (
+            <option key={r} value={r}>🔁 {RECURRENCE_LABEL[r]}</option>
+          ))}
+        </select>
       </Field>
       <Field label="Ball (hajm)" hint="Oylik reja va KPI “hajm” ko‘rsatkichi uchun. Oddiy vazifa — 1.">
         <input className="input" type="number" min={1} max={20} value={form.points} onChange={(e) => set('points', Number(e.target.value))} />

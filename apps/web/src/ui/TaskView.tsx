@@ -7,6 +7,7 @@ import { Avatar, Empty, Field, Icon, Skeleton, StatusPill } from './kit';
 import { useApp } from './state';
 import { useMembers } from '../lib/queries';
 import { DeadlineEditor } from './TaskForm';
+import { RECURRENCES, RECURRENCE_LABEL, type Recurrence } from '@retarget/shared';
 
 export function TaskView({ id, board = 'main' }: { id: string; board?: string }) {
   const { fail, toast, session } = useApp();
@@ -115,6 +116,7 @@ export function TaskView({ id, board = 'main' }: { id: string; board?: string })
 
       <Checklist task={t} />
       <Links task={t} />
+      <Repeat task={t} closed={closed} />
 
       {t.canEdit && !closed && (
         editDeadline ? (
@@ -166,13 +168,15 @@ export function TaskView({ id, board = 'main' }: { id: string; board?: string })
 function eventText(e: TaskDetail['events'][number]) {
   switch (e.action) {
     case 'CREATE':
-      return 'vazifani yaratdi';
+      return e.data && 'repeatedFromId' in e.data ? 'takroriy vazifani yaratdi 🔁' : 'vazifani yaratdi';
     case 'DEADLINE_CHANGE':
       return 'deadline’ni o‘zgartirdi';
     case 'EDIT':
       return 'tahrirladi';
     case 'FILE':
       return 'fayl biriktirdi';
+    case 'REPEAT_STOPPED':
+      return 'takrorlanish to‘xtadi';
     default:
       return `${ACTION[e.action]?.label.toLowerCase() ?? e.action} → ${STATUS[e.toStatus ?? ''] ?? ''}`;
   }
@@ -323,6 +327,38 @@ function Links({ task }: { task: TaskDetail }) {
           </a>
         ))
       )}
+    </div>
+  );
+}
+
+/** Repeating: who gave the task (or a manager) can switch it on, change or stop it. */
+function Repeat({ task, closed }: { task: TaskDetail; closed: boolean }) {
+  const { fail, toast, session } = useApp();
+  const refresh = useRefresh(task.id);
+  const editable = !closed && (task.canEdit || task.createdBy === session.user.id);
+  const save = useMutation({
+    mutationFn: (recurrence: string) => api(`/tasks/${task.id}`, { method: 'PATCH', body: { recurrence: recurrence || null } }),
+    onSuccess: (_d, r) => {
+      toast(r ? `🔁 ${RECURRENCE_LABEL[r as Recurrence]}` : 'Takrorlanish o‘chirildi');
+      refresh();
+    },
+    onError: fail,
+  });
+  if (!task.recurrence && !editable) return null;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="section-title">Takrorlanish</div>
+      {editable ? (
+        <select className="input" value={task.recurrence ?? ''} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}>
+          <option value="">Takrorlanmaydi</option>
+          {RECURRENCES.map((r) => (
+            <option key={r} value={r}>🔁 {RECURRENCE_LABEL[r]}</option>
+          ))}
+        </select>
+      ) : (
+        <div className="small">🔁 {RECURRENCE_LABEL[task.recurrence as Recurrence] ?? task.recurrence}</div>
+      )}
+      {task.recurrence && <div className="xs muted">Muddati kelganda yoki yopilganda keyingi vazifa o‘zi yaratiladi.</div>}
     </div>
   );
 }

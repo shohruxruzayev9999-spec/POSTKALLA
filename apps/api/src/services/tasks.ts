@@ -3,12 +3,14 @@ import { and, asc, desc, eq, inArray, max, notInArray, or, sql } from 'drizzle-o
 import { alias } from 'drizzle-orm/pg-core';
 import {
   DomainError,
+  RECURRENCES,
   TASK_PRIORITIES,
   TASK_STATUSES,
   allowedActions,
   applyTaskAction,
   canAccess,
   checkAccess,
+  localParts,
   type TaskAction,
   type TaskActorRelation,
   type TaskStatus,
@@ -16,7 +18,7 @@ import {
 } from '@retarget/shared';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { departments, memberships, projects, taskEvents, taskFiles, tasks, users } from '../db/schema.js';
+import { departments, memberships, projects, taskChecklist, taskEvents, taskFiles, tasks, users } from '../db/schema.js';
 import { notFound, type Ctx, type ResolvedActor } from './context.js';
 import type { TaskCard } from './notifier.js';
 import { cardCounts, listChecklist, listComments } from './boards.js';
@@ -75,9 +77,17 @@ export const createTaskInput = z.object({
   platform: z.string().trim().max(40).nullable().optional(),
   links: z.array(z.string().trim().url().max(500)).max(5).default([]),
   columnId: z.string().uuid().nullable().optional(),
+  recurrence: z.enum(RECURRENCES).nullable().optional(),
+  /** Checklist lines to start with (a repeated task copies its checklist, unticked). */
+  checklist: z.array(z.string().trim().min(1).max(300)).max(50).optional(),
 });
 
-async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>) {
+/** Internal only, never from a request: links a repeated copy to the task it came from. */
+interface CreateOptions {
+  repeatedFromId?: string;
+}
+
+async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>, opts: CreateOptions = {}) {
   const data = createTaskInput.parse(input);
   const currentMonth = monthAt(ctx.now(), actor.company.timezone);
   if (data.plannedMonth && (!data.projectId || data.plannedMonth < currentMonth || Number(data.plannedMonth.slice(0, 4)) > Number(currentMonth.slice(0, 4)) + 2)) throw new DomainError('VALIDATION', 'Vazifa uchun joriy yoki kelgusi loyiha oyini tanlang');
@@ -153,13 +163,18 @@ async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<ty
         platform: data.platform ?? null,
         links: data.links,
         columnId: data.columnId ?? null,
+        recurrence: data.recurrence ?? null,
+        repeatedFromId: opts.repeatedFromId ?? null,
         deadline: data.deadline,
         originalDeadline: data.deadline,
         createdAt: ctx.now(),
         updatedAt: ctx.now(),
       })
       .returning();
-    await tx.insert(taskEvents).values({ createdAt: ctx.now(), taskId: t!.id, actorUserId: actor.userId, action: 'CREATE', toStatus: 'NEW' });
+    await tx.insert(taskEvents).values({ createdAt: ctx.now(), taskId: t!.id, actorUserId: actor.userId, action: 'CREATE', toStatus: 'NEW', data: opts.repeatedFromId ? { repeatedFromId: opts.repeatedFromId } : null });
+    if (data.checklist?.length) {
+      await tx.insert(taskChecklist).values(data.checklist.map((text, position) => ({ taskId: t!.id, text, position })));
+    }
     return t!;
   });
 
@@ -237,6 +252,7 @@ export const updateTaskInput = z.object({
   format: z.string().trim().max(40).nullable().optional(),
   platform: z.string().trim().max(40).nullable().optional(),
   links: z.array(z.string().trim().url().max(500)).max(5).optional(),
+  recurrence: z.enum(RECURRENCES).nullable().optional(),
 });
 
 async function updateTaskInner(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof updateTaskInput>) {
@@ -445,8 +461,8 @@ async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
 
 
 
-export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>) {
-  return calendarWrite(ctx, actor, inner => createTaskInner(inner, actor, input));
+export async function createTask(ctx: Ctx, actor: ResolvedActor, input: z.input<typeof createTaskInput>, opts: CreateOptions = {}) {
+  return calendarWrite(ctx, actor, inner => createTaskInner(inner, actor, input, opts));
 }
 
 export async function actOnTask(ctx: Ctx, actor: ResolvedActor, taskId: string, action: TaskAction, comment?: string | null) {
@@ -459,4 +475,59 @@ export async function updateTask(ctx: Ctx, actor: ResolvedActor, taskId: string,
 
 export async function addTaskFile(ctx: Ctx, actor: ResolvedActor, taskId: string, input: z.input<typeof addFileInput>) {
   return calendarWrite(ctx, actor, inner => addTaskFileInner(inner, actor, taskId, input));
+}
+
+// ------------------------------------------------------------------------------------------ export
+
+const STATUS_UZ: Record<string, string> = { NEW: 'Yangi', IN_PROGRESS: 'Jarayonda', REVIEW: 'Tekshiruvda', RETURNED: 'Qaytarilgan', DONE: 'Bajarildi', BLOCKED: 'Bloklangan', CANCELLED: 'Bekor qilingan' };
+const PRIORITY_UZ: Record<string, string> = { HIGH: 'Yuqori', MEDIUM: 'O‘rta', LOW: 'Past' };
+const REPEAT_UZ: Record<string, string> = { DAILY: 'Har kuni', WEEKLY: 'Har hafta', MONTHLY: 'Har oy' };
+
+function csvCell(v: unknown): string {
+  const s = v === null || v === undefined ? '' : String(v);
+  // Formula injection: a cell starting with = + - @ is opened by Excel as a formula.
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+/**
+ * Every task the person may see (open + closed in the last year) as a CSV file for Excel,
+ * sent to their Telegram chat — a Mini App cannot reliably download files itself.
+ */
+export async function exportTasks(ctx: Ctx, actor: ResolvedActor, input: { mine?: boolean } = {}) {
+  const rows = await listTasks(ctx, actor, { includeClosed: true, closedDays: 365, mine: input.mine });
+  const tz = actor.company.timezone;
+  const fmt = (d: Date | null) => {
+    if (!d) return '';
+    const p = localParts(d, tz);
+    const z = (n: number) => String(n).padStart(2, '0');
+    return `${p.year}-${z(p.month)}-${z(p.day)} ${z(p.hour)}:${z(p.minute)}`;
+  };
+  const head = ['#', 'Vazifa', 'Holat', 'Loyiha', 'Ijrochi', 'Muddat', 'Asl muddat', 'Yakunlangan', 'Muhimlik', 'Ball', 'Format', 'Platforma', '1:1', 'Takror', 'Kechikkan'];
+  const lines = rows
+    .sort((a, b) => a.number - b.number)
+    .map((t) => [
+      t.number,
+      t.title,
+      STATUS_UZ[t.status] ?? t.status,
+      t.project ?? '',
+      t.assignee.name,
+      fmt(t.deadline),
+      fmt(t.originalDeadline),
+      fmt(t.completedAt),
+      PRIORITY_UZ[t.priority] ?? t.priority,
+      t.points,
+      t.format ?? '',
+      t.platform ?? '',
+      t.isPrivate ? 'ha' : '',
+      t.recurrence ? REPEAT_UZ[t.recurrence] ?? t.recurrence : '',
+      t.overdue ? 'ha' : '',
+    ]);
+  const csv = `﻿${[head, ...lines].map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n`;
+  const bytes = new TextEncoder().encode(csv);
+  const today = fmt(ctx.now()).slice(0, 10);
+  const fileName = `vazifalar-${today}.csv`;
+  const [u] = await ctx.db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, actor.userId));
+  await ctx.notifier.sendDocument(u!.telegramId, bytes, fileName, `📄 Vazifalar — ${rows.length} ta${input.mine ? ' (meniki)' : ''}\nExcel yoki Google Sheets’da oching.`);
+  return { ok: true, fileName, count: rows.length };
 }
