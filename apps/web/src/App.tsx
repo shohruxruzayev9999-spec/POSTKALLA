@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, session as store } from './lib/api';
-import type { AppContext, CompanyRef, User } from './lib/types';
+import type { AppContext, CompanyRef, MyJoinStatus, User } from './lib/types';
 import { tg } from './lib/tg';
 import { Home } from './pages/Home';
 import { Onboarding } from './pages/Onboarding';
@@ -26,6 +26,7 @@ interface AuthResult {
   token: string;
   user: User;
   companies: CompanyRef[];
+  joinRequests?: MyJoinStatus[];
   startParam: string | null;
 }
 
@@ -33,23 +34,23 @@ type Boot =
   | { stage: 'loading' }
   | { stage: 'outside' }
   | { stage: 'error'; message: string }
-  | { stage: 'ready'; user: User; companies: CompanyRef[]; startParam: string | null };
+  | { stage: 'ready'; user: User; companies: CompanyRef[]; joinRequests?: MyJoinStatus[]; startParam: string | null };
 
 async function authenticate(): Promise<Boot> {
   if (tg) {
     const r = await api<AuthResult>('/auth/telegram', { method: 'POST', body: { initData: tg.initData } });
     store.setToken(r.token);
-    return { stage: 'ready', user: r.user, companies: r.companies, startParam: r.startParam };
+    return { stage: 'ready', user: r.user, companies: r.companies, joinRequests: r.joinRequests, startParam: r.startParam };
   }
   const dev = new URLSearchParams(location.search).get('dev');
   if (dev && import.meta.env.DEV) {
     const r = await api<AuthResult>('/auth/dev', { method: 'POST', body: { telegramId: Number(dev), firstName: `Dev ${dev}` } });
     store.setToken(r.token);
-    return { stage: 'ready', user: r.user, companies: r.companies, startParam: new URLSearchParams(location.search).get('start') };
+    return { stage: 'ready', user: r.user, companies: r.companies, joinRequests: r.joinRequests, startParam: new URLSearchParams(location.search).get('start') };
   }
   if (store.token) {
     try {
-      const r = await api<{ user: User; companies: CompanyRef[] }>('/me');
+      const r = await api<{ user: User; companies: CompanyRef[]; joinRequests?: MyJoinStatus[] }>('/me');
       return { stage: 'ready', ...r, startParam: null };
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) store.setToken(null);
@@ -64,6 +65,7 @@ export function App() {
   const [boot, setBoot] = useState<Boot>({ stage: 'loading' });
   const [invite, setInvite] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [creatingCompany, setCreatingCompany] = useState(false);
   const qc = useQueryClient();
 
   const start = useCallback(async () => {
@@ -74,6 +76,7 @@ export function App() {
       if (b.startParam?.startsWith('inv_')) setInvite(b.startParam.slice(4));
       if (b.startParam?.startsWith('task_')) go('tasks', b.startParam.slice(5));
       if (b.startParam === 'digest') go('digest');
+      if (b.startParam === 'join_requests') go('team');
       if (b.startParam === 'billing') go('billing');
       if (b.startParam?.startsWith('rep_')) go('reports', b.startParam.slice(4));
       const active = b.companies.filter((c) => c.status === 'ACTIVE');
@@ -123,6 +126,7 @@ export function App() {
       />
     );
   }
+  if (!companyId && !creatingCompany) return <NotInTeam requests={boot.joinRequests ?? []} onRecheck={start} onCreate={() => setCreatingCompany(true)} />;
   if (!companyId) return <Onboarding user={boot.user} onCreated={(id) => reloadCompanies(id)} />;
   if (ctxQuery.isError) return <Splash error={(ctxQuery.error as Error).message} onRetry={() => ctxQuery.refetch()} />;
 
@@ -322,3 +326,31 @@ function Outside() {
   );
 }
 
+
+/**
+ * No self-registration: someone with no company sees whether a join request is waiting, or how
+ * to get in through a team group. Company owners can still open a new company from here.
+ */
+function NotInTeam({ requests, onRecheck, onCreate }: { requests: MyJoinStatus[]; onRecheck: () => void; onCreate: () => void }) {
+  const pending = requests.find((r) => r.status === 'PENDING');
+  const rejected = !pending && requests.some((r) => r.status === 'REJECTED');
+  const title = pending ? 'So‘rovingiz tasdiqlanmoqda' : rejected ? 'So‘rovingiz rad etildi' : 'Hozircha loyihada emassiz';
+  const text = pending
+    ? `Bot sizni «${pending.group ?? pending.company}» guruhidan topdi. Rahbar tasdiqlagach vazifa va loyihalaringiz shu yerda paydo bo‘ladi, Telegram’ga xabar keladi.`
+    : rejected
+      ? 'Rahbaringiz so‘rovni tasdiqlamadi. Savol bo‘lsa, unga murojaat qiling yoki guruhdagi tugmani qayta bosing.'
+      : 'Rahbaringizdan sizni ishchi Telegram guruhiga qo‘shishini so‘rang, keyin guruhdagi «POSTKALLA’ga qo‘shilish» tugmasini bosing.';
+  return (
+    <div className="main" style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '100%' }}>
+      <div className="card stack" style={{ alignItems: 'center', textAlign: 'center', gap: 14, padding: 24 }}>
+        <Ring value={pending ? 35 : 0} size={84} stroke={9} tone={pending ? 'amber' : 'green'} />
+        <div className="xb" style={{ fontSize: 19 }}>{title}</div>
+        <div className="small muted" style={{ lineHeight: 1.6 }}>{text}</div>
+        <div className="row" style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button className="btn primary" onClick={onRecheck}>Qayta tekshirish</button>
+          {!pending && <button className="btn" onClick={onCreate}>Kompaniyamni ochish</button>}
+        </div>
+      </div>
+    </div>
+  );
+}

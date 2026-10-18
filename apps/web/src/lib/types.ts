@@ -39,7 +39,37 @@ export interface AppContext {
   headOfDepartmentIds: string[];
   projectIds: string[];
   permissions: Record<string, Scope[]>;
+  /** Effective per-member switches (role defaults filled in). */
+  perms: MemberPerms;
   allRoles: string[];
+}
+export interface MemberPerms {
+  createTasks: boolean;
+  assignTasks: boolean;
+  projectsView: 'ALL' | 'OWN';
+}
+export interface JoinRequest {
+  id: string;
+  userId: string;
+  name: string;
+  username: string | null;
+  photoUrl: string | null;
+  group: string | null;
+  departmentId: string | null;
+  createdAt: string;
+}
+export interface TgGroup {
+  id: string;
+  title: string;
+  kind: 'TEAM' | 'CLIENT';
+  departmentId: string | null;
+  department: string | null;
+  pending: number;
+}
+export interface MyJoinStatus {
+  status: 'PENDING' | 'REJECTED';
+  company: string;
+  group: string | null;
 }
 export interface Department {
   id: string;
@@ -63,6 +93,8 @@ export interface Member {
   position: string | null;
   phone: string | null;
   salary?: number | null;
+  perms: Partial<MemberPerms>;
+  effectivePerms: MemberPerms;
   joinedAt: string;
 }
 export interface Project {

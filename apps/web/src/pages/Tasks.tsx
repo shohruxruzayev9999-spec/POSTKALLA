@@ -91,7 +91,7 @@ export function FilterBar({ f, setF, hideDepartment }: { f: TaskFilters; setF: (
 }
 
 export function Tasks({ openId }: { openId?: string }) {
-  const { can } = useApp();
+  const { can, session } = useApp();
   const [view, setViewState] = useState<View>(readView);
   const setView = (v: View) => {
     setViewState(v);
@@ -120,7 +120,7 @@ export function Tasks({ openId }: { openId?: string }) {
             <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>Ro'yxat</button>
             <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>Kalendar</button>
           </div>
-          {can('task.manage') && (
+          {(session.ctx.perms.createTasks || session.ctx.perms.assignTasks) && (
             <button className="btn primary sm" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} /> Yangi
             </button>

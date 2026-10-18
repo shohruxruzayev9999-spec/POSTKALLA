@@ -9,6 +9,7 @@ import {
   applyTaskAction,
   canAccess,
   checkAccess,
+  checkCreateTask,
   type TaskAction,
   type TaskActorRelation,
   type TaskStatus,
@@ -123,7 +124,7 @@ async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<ty
     reviewerUserId,
     createdBy: actor.userId,
   };
-  checkAccess(actor, 'task.manage', taskTarget(draft));
+  checkCreateTask(actor, taskTarget(draft), draft.assigneeUserId);
 
   const task = await ctx.db.transaction(async (tx) => {
     // Per-company numbering; the advisory lock serialises concurrent creates in one company.

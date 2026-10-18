@@ -7,6 +7,7 @@ import type { Invitation, Member } from '../lib/types';
 import { shareLink } from '../lib/tg';
 import { Avatar, Empty, Field, Icon, Sheet, Skeleton } from '../ui/kit';
 import { MemberProfile } from './MemberProfile';
+import { Groups, JoinRequests } from '../ui/JoinRequests';
 import { go, useApp } from '../ui/state';
 
 const RANK: Record<string, number> = { OWNER: 100, ADMIN: 90, HR: 70, FINANCE: 70, MARKETER: 50, PM: 50, DEPT_HEAD: 50, EMPLOYEE: 10 };
@@ -51,6 +52,7 @@ export function Team({ openId }: { openId?: string }) {
           </button>
         )}
       </div>
+      {can('employee.manage') && <JoinRequests />}
       <input className="input" placeholder="Ism yoki lavozim…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="chips">
         <button className={`chip ${dep === 'all' ? 'on' : ''}`} onClick={() => setDep('all')}>
@@ -83,6 +85,7 @@ export function Team({ openId }: { openId?: string }) {
           ))}
         </div>
       )}
+      {can('employee.manage') && <Groups />}
       <Sheet open={inviting} onClose={() => setInviting(false)} title="Jamoaga taklif">
         {inviting && <InviteForm />}
       </Sheet>
@@ -102,11 +105,17 @@ export function MemberEdit({ m, deps, onDone }: { m: Member; deps: Array<{ id: s
     phone: m.phone ?? '',
     status: m.status,
     salary: m.salary ?? null,
+    perms: m.effectivePerms,
   });
+  const leaderTarget = m.roles.includes('OWNER') || m.roles.includes('ADMIN');
   const save = useMutation({
     mutationFn: () => {
       const body: Record<string, unknown> = {};
       if (hrEdit) Object.assign(body, { roles: form.roles, departmentId: form.departmentId || null, position: form.position || null, phone: form.phone || null, status: form.status });
+      if (hrEdit && !leaderTarget) {
+        const changed = Object.fromEntries(Object.entries(form.perms).filter(([k, v]) => m.effectivePerms[k as keyof typeof form.perms] !== v));
+        if (Object.keys(changed).length) body.perms = changed;
+      }
       if (can('salary.manage') && form.salary !== (m.salary ?? null)) body.salary = form.salary;
       return api(`/members/${m.userId}`, { method: 'PATCH', body });
     },
@@ -149,6 +158,20 @@ export function MemberEdit({ m, deps, onDone }: { m: Member; deps: Array<{ id: s
               <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </Field>
           </div>
+          {!leaderTarget && (
+            <div className="field">
+              <span>Ruxsatlar</span>
+              <PermRow label="Vazifa yaratish (o‘ziga)" on={form.perms.createTasks} yes="Yaratadi" no="Yaratmaydi" set={(v) => setForm({ ...form, perms: { ...form.perms, createTasks: v } })} />
+              <PermRow label="Boshqalarga vazifa berish" on={form.perms.assignTasks} yes="Beradi" no="Bermaydi" set={(v) => setForm({ ...form, perms: { ...form.perms, assignTasks: v } })} />
+              <PermRow
+                label="Loyihalarni ko‘rish"
+                on={form.perms.projectsView === 'ALL'}
+                yes="Hammasini"
+                no="Faqat o‘zinikini"
+                set={(v) => setForm({ ...form, perms: { ...form.perms, projectsView: v ? 'ALL' : 'OWN' } })}
+              />
+            </div>
+          )}
           <div className="seg">
             <button className={form.status === 'ACTIVE' ? 'on' : ''} onClick={() => setForm({ ...form, status: 'ACTIVE' })}>Faol</button>
             <button className={form.status === 'DISABLED' ? 'on' : ''} onClick={() => setForm({ ...form, status: 'DISABLED' })}>O‘chirilgan</button>
@@ -163,6 +186,18 @@ export function MemberEdit({ m, deps, onDone }: { m: Member; deps: Array<{ id: s
       <div className="row">
         <button className="btn grow" onClick={onDone}>Bekor</button>
         <button className="btn primary grow" disabled={save.isPending || form.roles.length === 0} onClick={() => save.mutate()}>Saqlash</button>
+      </div>
+    </div>
+  );
+}
+
+function PermRow({ label, on, yes, no, set }: { label: string; on: boolean; yes: string; no: string; set: (v: boolean) => void }) {
+  return (
+    <div className="row between" style={{ gap: 10, flexWrap: 'wrap', padding: '6px 0' }}>
+      <span className="small">{label}</span>
+      <div className="seg">
+        <button type="button" className={on ? 'on' : ''} onClick={() => set(true)}>{yes}</button>
+        <button type="button" className={!on ? 'on' : ''} onClick={() => set(false)}>{no}</button>
       </div>
     </div>
   );

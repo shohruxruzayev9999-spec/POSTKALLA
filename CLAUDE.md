@@ -9,9 +9,11 @@ Telegram Mini App ERP for marketing agencies (multi-tenant SaaS). Language of UI
 - `deploy/` — docker compose project `postkalla` (Postgres 16, API on 127.0.0.1:8090, nightly backup); host nginx serves the web build and proxies `/api`.
 
 ## Rules that must never regress (covered by tests)
-- Visibility: everyone sees the work (tasks, projects, team, attendance, KPI); money (finance, others' salaries) only CEO/Finance/HR; private 1:1 tasks only giver, assignee, reviewer, Owner, never posted to groups.
+- Visibility: everyone sees the work (tasks, projects, team, attendance, KPI) unless a manager set the member's `projectsView = OWN` switch (then only their projects and those projects' tasks, plus their own tasks); money (finance, others' salaries) only CEO/Finance/HR; private 1:1 tasks only giver, assignee, reviewer, Owner, never posted to groups.
 - Roles/salary/attendance: nobody edits their own; nobody grants or touches a rank ≥ their own; ≥1 Owner always.
 - Tenant isolation: every query filters by `company_id`; actor is loaded from DB per request (never from the token).
+- Per-member switches (`memberships.perms`: createTasks, assignTasks, projectsView) never restrict Owner/Admin; nobody changes their own.
+- Joining: no self-registration. Bot added to a group by a leader → TEAM group posts the join button → `join_requests` PENDING → approved by someone with employee.manage on the group's department. CLIENT groups never create members; disabled members cannot rejoin via the button.
 - Nobody approves their own task. Deadline moves need a manager + reason; motivation uses `original_deadline`.
 - Reminders count working hours only; one live reminder per chat (previous is deleted); 3 overdue reminders → project manager (+1 wh) → CEO (+1 wh, only if the status did not change).
 - Billing never collects card data; only a platform admin can confirm a payment.
@@ -40,4 +42,5 @@ Every push to `main` runs workflow "Server" (tests → build → ship; also manu
 - [x] Hisobotlar: project/company report from ERP data + stored Telegram group messages (`chat_messages`, bot must be group admin); preview page, PDF (pdfkit + bundled Manrope TTF in `apps/api/assets/fonts`), send to Telegram; optional AI summary (ANTHROPIC_API_KEY)
 - [x] AI agent (kunlik tahlil): every working day at `digestTime` (default work start) — rule-based recommendations + optional AI advice, Telegram DM to leads (CEO/admin/PM/marketer/dept heads), dashboard card and page; money only to finance viewers, never sent to the model; recommends only, writes nothing but its own `digests` row
 - [x] Obuna: plans Start/Biznes/Premium (`packages/shared/src/plans.ts`), 1/3/6/12-month prepay discounts, 14-day trial for new agencies (agencies that existed before billing = Premium, no end date), payment request → platform admin confirms in bot or app (PLATFORM_ADMIN_TG_IDS, default: owners of the oldest company); no card data is ever collected; limits are warnings only
+- [x] Guruhdan qo'shilish (join button, Kutilayotganlar, Jamoa/Mijoz guruh, /qoshilish /jamoa /mijoz) + xodim ruxsatlari (vazifa yaratish, vazifa berish, loyihalarni ko'rish)
 - [ ] ru/en translations, data migration from the old ERP, Payme/Click gateway

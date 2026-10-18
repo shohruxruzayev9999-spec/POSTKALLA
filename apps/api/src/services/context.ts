@@ -65,6 +65,7 @@ export async function loadActor(db: Db, userId: string, companyId: string): Prom
     departmentIds: row.m.departmentId ? [row.m.departmentId] : [],
     headOfDepartmentIds: headed.map((d) => d.id),
     projectIds: [...new Set([...memberOf.map((p) => p.id), ...managed.map((p) => p.id)])],
+    perms: row.m.perms ?? {},
   };
 }
 

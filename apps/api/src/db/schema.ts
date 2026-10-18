@@ -16,6 +16,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { MemberPerms } from '@retarget/shared';
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -91,6 +92,8 @@ export const memberships = pgTable(
     phone: text('phone'),
     /** Monthly base salary in the company currency (so'm). Visible only via salary.view. */
     salary: bigint('salary', { mode: 'number' }),
+    /** Per-member switches on top of the role (createTasks, assignTasks, projectsView). */
+    perms: jsonb('perms').$type<MemberPerms>().notNull().default({}),
     joinedAt: createdAt(),
   },
   (t) => [uniqueIndex('memberships_company_user_uq').on(t.companyId, t.userId), index('memberships_user_idx').on(t.userId)],
@@ -512,3 +515,40 @@ export const projectMonths = pgTable('project_months', {
   deleted: boolean('deleted').notNull().default(false),
   snapshot: jsonb('snapshot').$type<{ tasks: Record<string, unknown>[]; columns: Record<string, unknown>[] }>().notNull().default({ tasks: [], columns: [] }),
 }, t => [primaryKey({ columns: [t.projectId, t.month] }), index('project_months_company_idx').on(t.companyId)]);
+
+/**
+ * A Telegram group the bot was added to. TEAM groups bring people in through the join button;
+ * CLIENT groups never turn anyone into an employee.
+ */
+export const telegramGroups = pgTable(
+  'telegram_groups',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    chatId: bigint('chat_id', { mode: 'number' }).notNull(),
+    title: text('title').notNull().default(''),
+    kind: text('kind').notNull().default('TEAM'), // TEAM | CLIENT
+    /** Department new members from this group land in by default. */
+    departmentId: uuid('department_id').references(() => departments.id, { onDelete: 'set null' }),
+    addedBy: uuid('added_by').references(() => users.id, { onDelete: 'set null' }),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('telegram_groups_chat_uq').on(t.chatId), index('telegram_groups_company_idx').on(t.companyId)],
+);
+
+/** Someone pressed «POSTKALLA'ga qo'shilish» in a team group and waits for approval. */
+export const joinRequests = pgTable(
+  'join_requests',
+  {
+    id: id(),
+    companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id').references(() => telegramGroups.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('PENDING'), // PENDING | APPROVED | REJECTED
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    decidedAt: ts('decided_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('join_requests_company_user_uq').on(t.companyId, t.userId), index('join_requests_company_status_idx').on(t.companyId, t.status)],
+);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DomainError } from './errors.js';
-import { assertCanGrantRole, assertNotSelf, assertOwnerRemains, canAccess, type Actor } from './permissions.js';
+import { assertCanGrantRole, assertNotSelf, assertOwnerRemains, canAccess, canCreateTask, effectivePerms, type Actor } from './permissions.js';
 
 const base = { companyId: 'c1', departmentIds: [], headOfDepartmentIds: [], projectIds: [] };
 const employee: Actor = { ...base, userId: 'u-emp', roles: ['EMPLOYEE'], departmentIds: ['d-design'] };
@@ -103,5 +103,42 @@ describe('hard rules', () => {
   it('the last owner cannot be removed', () => {
     expect(() => assertOwnerRemains(0)).toThrow(DomainError);
     expect(() => assertOwnerRemains(1)).not.toThrow();
+  });
+});
+
+describe('per-member switches (createTasks / assignTasks / projectsView)', () => {
+  const t = { companyId: 'c1', departmentId: 'd-design', projectId: 'p-kafe' };
+  it('defaults follow the role', () => {
+    expect(canCreateTask(employee, { ...t, ownerUserIds: ['u-emp'] }, 'u-emp')).toBe(true);
+    expect(canCreateTask(employee, { ...t, ownerUserIds: ['u-x'] }, 'u-x')).toBe(false);
+    expect(canCreateTask(head, { ...t, ownerUserIds: ['u-x'] }, 'u-x')).toBe(true);
+    expect(effectivePerms(employee)).toEqual({ createTasks: true, assignTasks: false, projectsView: 'ALL' });
+    expect(effectivePerms(head).assignTasks).toBe(true);
+  });
+  it('createTasks=false blocks creating for oneself', () => {
+    const e = { ...employee, perms: { createTasks: false } };
+    expect(canCreateTask(e, { ...t, ownerUserIds: ['u-emp'] }, 'u-emp')).toBe(false);
+  });
+  it('assignTasks=true lets an employee give tasks; =false takes it from a head', () => {
+    expect(canCreateTask({ ...employee, perms: { assignTasks: true } }, { ...t, ownerUserIds: ['u-x'] }, 'u-x')).toBe(true);
+    expect(canCreateTask({ ...head, perms: { assignTasks: false } }, { ...t, ownerUserIds: ['u-x'] }, 'u-x')).toBe(false);
+  });
+  it('assignTasks=true does not widen managing other tasks', () => {
+    expect(canAccess({ ...employee, perms: { assignTasks: true } }, 'task.manage', { ...t, ownerUserIds: [] })).toBe(false);
+  });
+  it('projectsView=OWN hides other projects and their tasks, but not own tasks', () => {
+    const e = { ...employee, projectIds: ['p-mine'], perms: { projectsView: 'OWN' as const } };
+    expect(canAccess(e, 'project.view', { companyId: 'c1', projectId: 'p-mine' })).toBe(true);
+    expect(canAccess(e, 'project.view', { companyId: 'c1', projectId: 'p-kafe' })).toBe(false);
+    expect(canAccess(e, 'project.view', { companyId: 'c1', departmentId: 'd-design' })).toBe(false);
+    expect(canAccess(e, 'task.view', { companyId: 'c1', projectId: 'p-kafe', ownerUserIds: ['u-x'] })).toBe(false);
+    expect(canAccess(e, 'task.view', { companyId: 'c1', projectId: 'p-kafe', ownerUserIds: ['u-emp'] })).toBe(true);
+    expect(canAccess(e, 'task.view', { companyId: 'c1', projectId: null, ownerUserIds: ['u-x'] })).toBe(true);
+  });
+  it('switches never restrict an Owner or Admin', () => {
+    const o = { ...owner, perms: { createTasks: false, assignTasks: false, projectsView: 'OWN' as const } };
+    expect(canCreateTask(o, { ...t, ownerUserIds: ['u-x'] }, 'u-x')).toBe(true);
+    expect(canAccess(o, 'project.view', { companyId: 'c1', projectId: 'p-kafe' })).toBe(true);
+    expect(effectivePerms({ ...admin, perms: { createTasks: false } }).createTasks).toBe(true);
   });
 });
