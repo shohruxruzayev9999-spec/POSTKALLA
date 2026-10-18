@@ -12,7 +12,7 @@ export function TaskRow({ t, showAssignee, openRoute = 'tasks' }: { t: TaskListI
       <div className="grow stack" style={{ gap: 4 }}>
         <div className="row between" style={{ alignItems: 'flex-start' }}>
           <div className="b" style={{ fontSize: 14, lineHeight: 1.3 }}>
-            <span className="faint">#{t.number}</span> {t.isPrivate && <span className="xs" style={{ color: 'var(--review)' }}>1:1 · </span>}{t.title}
+            <span className="faint">#{t.number}</span> {t.isPrivate && <span className="xs" style={{ color: 'var(--review)' }}>1:1 · </span>}{t.recurrence && <span className="xs" title="Takrorlanadi">🔁 </span>}{t.title}
           </div>
           {t.revision > 1 && <span className="xs xb" style={{ color: 'var(--warn)' }}>R{t.revision}</span>}
         </div>

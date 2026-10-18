@@ -1,5 +1,5 @@
 import { localParts, zonedTime } from '@retarget/shared';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useDepartments, useMembers, useProjects } from '../lib/queries';
@@ -91,7 +91,7 @@ export function FilterBar({ f, setF, hideDepartment }: { f: TaskFilters; setF: (
 }
 
 export function Tasks({ openId }: { openId?: string }) {
-  const { can } = useApp();
+  const { can, toast, fail } = useApp();
   const [view, setViewState] = useState<View>(readView);
   const setView = (v: View) => {
     setViewState(v);
@@ -109,6 +109,11 @@ export function Tasks({ openId }: { openId?: string }) {
     queryFn: () => api<TaskListItem[]>('/tasks', { query: { mine: mine || undefined, includeClosed: true } }),
   });
   const shown = useMemo(() => applyFilters(tasks.data ?? [], f), [tasks.data, f]);
+  const exportCsv = useMutation({
+    mutationFn: () => api<{ count: number }>('/tasks/export', { method: 'POST', body: { mine } }),
+    onSuccess: (r) => toast(`📄 ${r.count} ta vazifa Telegram’ga fayl qilib yuborildi`),
+    onError: fail,
+  });
 
   return (
     <div className="stack" style={{ gap: 14 }}>
@@ -120,6 +125,9 @@ export function Tasks({ openId }: { openId?: string }) {
             <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>Ro'yxat</button>
             <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>Kalendar</button>
           </div>
+          <button className="btn sm" title="Ro‘yxatni Telegram’ga CSV (Excel) fayl qilib yuborish" disabled={exportCsv.isPending} onClick={() => exportCsv.mutate()}>
+            <Icon name="file" size={16} /> Eksport
+          </button>
           {can('task.manage') && (
             <button className="btn primary sm" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} /> Yangi

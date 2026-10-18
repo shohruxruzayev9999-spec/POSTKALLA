@@ -1,15 +1,17 @@
-import { DomainError, canAccess, type TaskAction } from '@retarget/shared';
+import { DomainError, QUICK_DEADLINES, canAccess, quickDeadline, quickDeadlineLabel, type QuickDeadline, type TaskAction } from '@retarget/shared';
 import { and, eq } from 'drizzle-orm';
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Api, type Context } from 'grammy';
+import type { Message } from 'grammy/types';
 import { findUserByTelegram, upsertTelegramUser } from '../auth/telegram.js';
-import { memberships, projects, tasks, users } from '../db/schema.js';
-import { loadActor, type Ctx } from '../services/context.js';
+import { companies, memberships, projects, tasks, users } from '../db/schema.js';
+import { confirmDraft, draftFromTelegram, myOpenTasks, switchDraftCompany, type CaptureInput, type TaskDraft } from '../services/capture.js';
+import { loadActor, scheduleOf, type Ctx } from '../services/context.js';
 import type { Notifier, ReminderDelivery, SentMessage, TaskCard } from '../services/notifier.js';
 import { bindChat } from '../services/projects.js';
 import { recordGroupMessage } from '../services/chatlog.js';
 import { decidePayment } from '../services/billing.js';
 import { actOnTask, addTaskFile, taskCard } from '../services/tasks.js';
-import { cardText, esc, reminderText } from './format.js';
+import { cardText, draftText, esc, myTasksText, reminderText } from './format.js';
 
 const ACTION_BUTTON: Partial<Record<string, Array<[string, TaskAction]>>> = {
   NEW: [['▶️ Boshlash', 'START']],
@@ -123,6 +125,22 @@ export class TelegramNotifier implements Notifier {
   }
 }
 
+/** Task drafts waiting for "Saqlash" (from /task or a forward). In-memory: single process, 1 day. */
+const drafts = new Map<string, { draft: TaskDraft; ownerTg: number; at: number }>();
+let draftSeq = 0;
+
+function draftKeyboard(key: string, d: TaskDraft, schedule: Parameters<typeof quickDeadlineLabel>[1]): InlineKeyboard {
+  const kb = new InlineKeyboard().text('✅ Saqlash', `cap:${key}:ok`).text('✖️ Bekor', `cap:${key}:no`).row();
+  QUICK_DEADLINES.forEach((q, i) => {
+    kb.text(`⏰ ${quickDeadlineLabel(q, schedule)}`, `cap:${key}:due:${q}`);
+    if (i % 2 === 1) kb.row();
+  });
+  if (!d.projectId && d.companyOptions.length > 1) {
+    for (const [i, o] of d.companyOptions.entries()) if (o.id !== d.companyId) kb.row().text(`🏢 ${o.name}`, `cap:${key}:co:${i}`);
+  }
+  return kb;
+}
+
 /** Waiting for a comment typed as a reply (RETURN / BLOCK from a group). In-memory: single process. */
 const pendingComments = new Map<string, { taskId: string; action: TaskAction; userTg: number; at: number }>();
 
@@ -159,6 +177,112 @@ export function registerHandlers(bot: Bot, ctx: Ctx, botUsername: string) {
   bot.on('my_chat_member', async (c) => {
     if (c.chat.type === 'private' && ['kicked', 'left'].includes(c.myChatMember.new_chat_member.status)) {
       await ctx.db.update(users).set({ canDm: false }).where(eq(users.telegramId, c.chat.id));
+    }
+  });
+
+  // ------------------------------------------------------------------ tasks from Telegram
+  async function scheduleFor(companyId: string) {
+    const [c] = await ctx.db.select().from(companies).where(eq(companies.id, companyId));
+    return scheduleOf(c!);
+  }
+
+  async function sendDraft(c: Context, input: CaptureInput) {
+    try {
+      const draft = await draftFromTelegram(ctx, input);
+      const key = `${Date.now().toString(36)}${(++draftSeq).toString(36)}`;
+      drafts.set(key, { draft, ownerTg: input.telegramId, at: Date.now() });
+      const schedule = await scheduleFor(draft.companyId);
+      await c.reply(draftText(draft, ctx.now()), {
+        parse_mode: 'HTML',
+        reply_markup: draftKeyboard(key, draft, schedule),
+        reply_parameters: c.message ? { message_id: c.message.message_id, allow_sending_without_reply: true } : undefined,
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (e) {
+      await c.reply(errorText(e));
+    }
+  }
+
+  /** The message replied to or forwarded, as capture input. */
+  function sourceOf(m: Message): CaptureInput['source'] {
+    const text = m.text ?? m.caption ?? '';
+    if (!text.trim()) return null;
+    const o = m.forward_origin;
+    if (o) {
+      const author = o.type === 'user' ? [o.sender_user.first_name, o.sender_user.last_name].filter(Boolean).join(' ') : o.type === 'hidden_user' ? o.sender_user_name : o.type === 'chat' ? ('title' in o.sender_chat ? o.sender_chat.title ?? null : null) : o.type === 'channel' ? ('title' in o.chat ? o.chat.title ?? null : null) : null;
+      return { text, author, authorTelegramId: o.type === 'user' ? o.sender_user.id : null };
+    }
+    return { text, author: m.from ? [m.from.first_name, m.from.last_name].filter(Boolean).join(' ') : null, authorTelegramId: m.from && !m.from.is_bot ? m.from.id : null };
+  }
+
+  bot.command('task', async (c) => {
+    if (!c.from || !c.message) return;
+    const reply = c.message.reply_to_message;
+    await sendDraft(c, {
+      telegramId: c.from.id,
+      text: typeof c.match === 'string' ? c.match : '',
+      source: reply ? sourceOf(reply) : null,
+      groupChatId: c.chat.type === 'private' ? null : c.chat.id,
+    });
+  });
+
+  for (const mode of ['my', 'due'] as const) {
+    bot.command(mode, async (c) => {
+      if (!c.from) return;
+      if (c.chat.type !== 'private') {
+        await c.reply(`Ro‘yxat shaxsiy: @${botUsername} ga /${mode} deb yozing.`);
+        return;
+      }
+      try {
+        const rows = await myOpenTasks(ctx, c.from.id, mode);
+        await c.reply(myTasksText(rows, mode, ctx.now()), {
+          parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard().url('📱 Ilovada ochish', appLink(botUsername)),
+          link_preview_options: { is_disabled: true },
+        });
+      } catch (e) {
+        await c.reply(errorText(e));
+      }
+    });
+  }
+
+  bot.callbackQuery(/^cap:([0-9a-z]+):(ok|no|due|co)(?::([A-Z_0-9]+))?$/, async (c) => {
+    const [, key, op, arg] = c.match;
+    const held = drafts.get(key!);
+    try {
+      if (!held) throw new DomainError('NOT_FOUND', 'Qoralama eskirgan — /task ni qayta yuboring');
+      if (held.ownerTg !== c.from.id) throw new DomainError('FORBIDDEN', 'Faqat qoralama muallifi');
+      if (op === 'no') {
+        drafts.delete(key!);
+        await c.editMessageText('✖️ Bekor qilindi').catch(() => undefined);
+        return void (await c.answerCallbackQuery());
+      }
+      if (op === 'ok') {
+        const t = await confirmDraft(ctx, held.draft);
+        drafts.delete(key!);
+        await c.editMessageText(`✅ <b>#${t.number} · ${esc(t.title)}</b> yaratildi`, {
+          parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard().url('📱 Ochish', appLink(botUsername, `task_${t.id}`)),
+        }).catch(() => undefined);
+        return void (await c.answerCallbackQuery({ text: '✔️ Saqlandi' }));
+      }
+      if (op === 'due') {
+        if (!(QUICK_DEADLINES as readonly string[]).includes(arg ?? '')) throw new DomainError('VALIDATION', 'Noma’lum muddat');
+        held.draft = { ...held.draft, deadline: quickDeadline(arg as QuickDeadline, ctx.now(), await scheduleFor(held.draft.companyId)), deadlineSet: true };
+      }
+      if (op === 'co') {
+        const o = held.draft.companyOptions[Number(arg)];
+        if (!o) throw new DomainError('NOT_FOUND', 'Kompaniya topilmadi');
+        held.draft = await switchDraftCompany(ctx, held.draft, o.id);
+      }
+      await c.editMessageText(draftText(held.draft, ctx.now()), {
+        parse_mode: 'HTML',
+        reply_markup: draftKeyboard(key!, held.draft, await scheduleFor(held.draft.companyId)),
+        link_preview_options: { is_disabled: true },
+      }).catch(() => undefined);
+      await c.answerCallbackQuery();
+    } catch (e) {
+      await c.answerCallbackQuery({ text: errorText(e), show_alert: true });
     }
   });
 
@@ -284,10 +408,19 @@ export function registerHandlers(bot: Bot, ctx: Ctx, botUsername: string) {
     return next();
   });
 
+  // A message forwarded to the bot becomes a task draft.
+  bot.on('message', async (c, next) => {
+    if (c.chat.type !== 'private' || !c.from || !c.message.forward_origin) return next();
+    const source = sourceOf(c.message);
+    if (!source) return c.reply('Matnli xabarni forward qiling — undan vazifa qoralamasi tayyorlanadi.');
+    await sendDraft(c, { telegramId: c.from.id, text: '', source });
+  });
+
   // Housekeeping: forget prompts nobody answered within a day.
   setInterval(() => {
     const cutoff = Date.now() - 86_400_000;
     for (const [k, v] of pendingComments) if (v.at < cutoff) pendingComments.delete(k);
+    for (const [k, v] of drafts) if (v.at < cutoff) drafts.delete(k);
   }, 3_600_000).unref();
 
   bot.catch((err) => console.error('[bot]', err.error));

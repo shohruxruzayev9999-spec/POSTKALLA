@@ -13,6 +13,7 @@ import * as org from '../services/org.js';
 import * as projects from '../services/projects.js';
 import * as months from '../services/projectMonths.js';
 import * as tasks from '../services/tasks.js';
+import { globalSearch } from '../services/search.js';
 import * as boards from '../services/boards.js';
 import * as shoots from '../services/shoots.js';
 import * as finance from '../services/finance.js';
@@ -180,6 +181,8 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.post('/api/projects', async (req) => projects.createProject(ctx, await actorOf(req), req.body as never));
   app.patch('/api/projects/:id', async (req) => projects.updateProject(ctx, await actorOf(req), idParam.parse(req.params).id, req.body as never));
 
+  app.post('/api/tasks/export', async (req) => tasks.exportTasks(ctx, await actorOf(req), z.object({ mine: z.boolean().optional() }).parse(req.body ?? {})));
+  app.get('/api/search', async (req) => globalSearch(ctx, await actorOf(req), req.query as never));
   app.get('/api/tasks', async (req) => tasks.listTasks(ctx, await actorOf(req), req.query as never));
   app.post('/api/tasks', async (req) => tasks.createTask(ctx, await actorOf(req), req.body as never));
   app.get('/api/tasks/:id', async (req) => tasks.getTask(ctx, await actorOf(req), idParam.parse(req.params).id));
