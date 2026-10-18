@@ -47,6 +47,11 @@ async function authenticate(): Promise<Boot> {
       if (!(e instanceof ApiError && e.status === 401 && store.token)) throw e;
     }
   }
+  if (import.meta.env.VITE_DEMO) {
+    const r = await api<AuthResult>('/auth/dev', { method: 'POST', body: {} });
+    store.setToken(r.token);
+    return { stage: 'ready', user: r.user, companies: r.companies, startParam: null };
+  }
   const dev = new URLSearchParams(location.search).get('dev');
   if (dev && import.meta.env.DEV) {
     const r = await api<AuthResult>('/auth/dev', { method: 'POST', body: { telegramId: Number(dev), firstName: `Dev ${dev}` } });
