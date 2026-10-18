@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { DomainError, ROLES, canAccess, isWorkingDate, localDateString, localParts, previousWorkingDate, scopesFor, workingHoursBetween, type Role, zonedTime } from '@retarget/shared';
+import { DomainError, ROLES, canAccess, ownProjectsOnly, isWorkingDate, localDateString, localParts, previousWorkingDate, scopesFor, workingHoursBetween, type Role, zonedTime } from '@retarget/shared';
 import { attendance, chatMessages, companies, departments, digests, financeRows, memberships, projects, shoots, taskEvents, tasks, users } from '../db/schema.js';
 import { bullets } from './ai.js';
 import { scheduleOf, type Company, type Ctx, type ResolvedActor } from './context.js';
@@ -89,6 +89,8 @@ const q = (s: string, n = 70) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** Leads read the digest: CEO, admins, PMs, marketers and department heads. */
 export function canSeeDigest(actor: ResolvedActor): boolean {
+  // The digest covers every project, so "only my projects" members do not get it.
+  if (ownProjectsOnly(actor)) return false;
   return actor.roles.some((r) => LEAD_ROLES.includes(r)) || actor.headOfDepartmentIds.length > 0;
 }
 
@@ -533,13 +535,17 @@ async function recipients(ctx: Ctx, companyId: string) {
       roles: memberships.roles,
       tg: users.telegramId,
       canDm: users.canDm,
+      perms: memberships.perms,
     })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(and(eq(memberships.companyId, companyId), eq(memberships.status, 'ACTIVE')));
   const heads = await ctx.db.select({ userId: departments.headUserId }).from(departments).where(eq(departments.companyId, companyId));
   const headIds = new Set(heads.map((h) => h.userId).filter(Boolean));
-  return rows.filter((r) => r.canDm && (r.roles.some((x) => LEAD_ROLES.includes(x)) || headIds.has(r.userId)));
+  const leader = (r: (typeof rows)[number]) => r.roles.includes('OWNER') || r.roles.includes('ADMIN');
+  return rows.filter(
+    (r) => r.canDm && (leader(r) || r.perms?.projectsView !== 'OWN') && (r.roles.some((x) => LEAD_ROLES.includes(x)) || headIds.has(r.userId)),
+  );
 }
 
 /** Minute worker: once per working day at the digest time, build, store and send. Idempotent. */

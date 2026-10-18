@@ -60,7 +60,15 @@ async function main() {
   if (bot) {
     await bot.api.setMyCommands([{ command: 'start', description: 'Ilovani ochish' }]).catch(() => undefined);
     await bot.api
-      .setMyCommands([{ command: 'bind', description: 'Guruhni loyihaga ulash' }], { scope: { type: 'all_group_chats' } })
+      .setMyCommands(
+        [
+          { command: 'bind', description: 'Guruhni loyihaga ulash' },
+          { command: 'qoshilish', description: "Qo'shilish tugmasini qayta chiqarish" },
+          { command: 'jamoa', description: 'Jamoa guruhi deb belgilash' },
+          { command: 'mijoz', description: 'Mijoz guruhi deb belgilash' },
+        ],
+        { scope: { type: 'all_group_chats' } },
+      )
       .catch(() => undefined);
     if (process.env.WEBAPP_URL) {
       await bot.api.setChatMenuButton({ menu_button: { type: 'web_app', text: 'Ochish', web_app: { url: process.env.WEBAPP_URL } } }).catch(() => undefined);

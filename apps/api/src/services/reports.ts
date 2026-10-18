@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, lt, lte, or } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { DomainError, canAccess, checkAccess, localDateString, zonedTime } from '@retarget/shared';
+import { DomainError, canAccess, checkAccess, localDateString, ownProjectsOnly, zonedTime } from '@retarget/shared';
 import { z } from 'zod';
 import { chatMessages, clients, financeRows, projects, shoots, tasks, users } from '../db/schema.js';
 import { createHash } from 'node:crypto';
@@ -137,6 +137,8 @@ export async function buildReport(ctx: Ctx, actor: ResolvedActor, raw: ReportQue
     };
   } else {
     checkAccess(actor, 'dashboard.view', { companyId: cid });
+    // A company report is built from every project.
+    if (ownProjectsOnly(actor)) throw new DomainError('FORBIDDEN', "Ruxsat yo'q: siz faqat o'z loyihalaringizni ko'rasiz");
   }
   const inProject = <T>(col: T) => (q.projectId ? eq(col as never, q.projectId) : undefined);
 

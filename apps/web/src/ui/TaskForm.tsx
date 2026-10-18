@@ -64,7 +64,10 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
   const qc = useQueryClient();
   const members = useMembers();
   const projects = useProjects();
-  const onlySelf = !can('task.manage', 'COMPANY') && !can('task.manage', 'DEPARTMENT') && !can('task.manage', 'PROJECT');
+  // Per-member switches decide who the task can go to; the server checks again.
+  const { createTasks, assignTasks } = session.ctx.perms;
+  const onlySelf = !assignTasks;
+  void can;
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -111,8 +114,11 @@ export function TaskForm({ onDone, projectId, assigneeUserId, columnId, departme
   });
   const active = (members.data ?? []).filter((m) => m.status === 'ACTIVE');
   const project = projects.data?.find((p) => p.id === form.projectId);
-  const candidates = project ? active.filter((m) => project.memberUserIds.includes(m.userId)) : active;
+  const candidates = (project ? active.filter((m) => project.memberUserIds.includes(m.userId)) : active).filter((m) => createTasks || m.userId !== session.user.id);
 
+  if (!createTasks && !assignTasks) {
+    return <div className="small muted" style={{ padding: 8 }}>Sizga vazifa yaratish ruxsat etilmagan. Rahbaringizga murojaat qiling.</div>;
+  }
   return (
     <div className="stack">
       <Field label="Nima qilish kerak?">

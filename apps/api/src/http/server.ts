@@ -1,6 +1,6 @@
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
-import { ACTIONS, DomainError, ROLES, scopesFor, type TaskAction } from '@retarget/shared';
+import { ACTIONS, DomainError, ROLES, effectivePerms, scopesFor, type TaskAction } from '@retarget/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
 import { findUserByTelegram, issuePurposeToken, issueToken, upsertTelegramUser, verifyInitData, verifyPurposeToken, verifyToken } from '../auth/telegram.js';
@@ -10,6 +10,7 @@ import * as analytics from '../services/analytics.js';
 import * as att from '../services/attendance.js';
 import { loadActor, type Ctx, type ResolvedActor } from '../services/context.js';
 import * as org from '../services/org.js';
+import * as join from '../services/join.js';
 import * as projects from '../services/projects.js';
 import * as months from '../services/projectMonths.js';
 import * as tasks from '../services/tasks.js';
@@ -84,14 +85,14 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
     const { initData } = z.object({ initData: z.string().min(10).max(8192) }).parse(req.body);
     const data = verifyInitData(initData, cfg.botToken, ctx.now());
     const user = await upsertTelegramUser(ctx.db, data.user);
-    return { token: await issueToken(user.id, cfg.jwtSecret), user, startParam: data.startParam, companies: await org.myCompanies(ctx.db, user.id) };
+    return { token: await issueToken(user.id, cfg.jwtSecret), user, startParam: data.startParam, companies: await org.myCompanies(ctx.db, user.id), joinRequests: await join.myJoinStatus(ctx.db, user.id) };
   });
 
   if (cfg.devLogin) {
     app.post('/api/auth/dev', async (req) => {
       const body = z.object({ telegramId: z.number().int(), firstName: z.string().min(1) }).parse(req.body);
       const user = (await findUserByTelegram(ctx.db, body.telegramId)) ?? (await upsertTelegramUser(ctx.db, { id: body.telegramId, first_name: body.firstName }));
-      return { token: await issueToken(user.id, cfg.jwtSecret), user, startParam: null, companies: await org.myCompanies(ctx.db, user.id) };
+      return { token: await issueToken(user.id, cfg.jwtSecret), user, startParam: null, companies: await org.myCompanies(ctx.db, user.id), joinRequests: await join.myJoinStatus(ctx.db, user.id) };
     });
     // Local development: bind a fake group and feed it messages as if the bot received them.
     app.post('/api/dev/chat', async (req) => {
@@ -108,7 +109,7 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
     await auth(req);
     const [user] = await ctx.db.select().from(users).where(eq(users.id, req.userId!));
     if (!user) throw new DomainError('UNAUTHORIZED', 'Foydalanuvchi topilmadi');
-    return { user, companies: await org.myCompanies(ctx.db, user.id) };
+    return { user, companies: await org.myCompanies(ctx.db, user.id), joinRequests: await join.myJoinStatus(ctx.db, user.id) };
   });
 
   app.post('/api/companies', async (req) => {
@@ -137,6 +138,7 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
       headOfDepartmentIds: a.headOfDepartmentIds,
       projectIds: a.projectIds,
       permissions,
+      perms: effectivePerms(a),
       allRoles: ROLES,
     };
   });
@@ -147,6 +149,11 @@ export function buildServer(ctx: Ctx, cfg: HttpConfig): FastifyInstance {
   app.patch('/api/departments/:id', async (req) => org.updateDepartment(ctx, await actorOf(req), idParam.parse(req.params).id, req.body as never));
 
   app.get('/api/members', async (req) => org.listMembers(ctx, await actorOf(req)));
+  app.get('/api/join-requests', async (req) => join.listJoinRequests(ctx, await actorOf(req)));
+  app.post('/api/join-requests/:id/approve', async (req) => join.approveJoin(ctx, await actorOf(req), idParam.parse(req.params).id, req.body as never));
+  app.post('/api/join-requests/:id/reject', async (req) => join.rejectJoin(ctx, await actorOf(req), idParam.parse(req.params).id));
+  app.get('/api/groups', async (req) => join.listGroups(ctx, await actorOf(req)));
+  app.patch('/api/groups/:id', async (req) => join.updateGroup(ctx, await actorOf(req), idParam.parse(req.params).id, req.body as never));
   app.patch('/api/members/:id', async (req) => org.updateMember(ctx, await actorOf(req), idParam.parse(req.params).id, req.body as never));
   app.get('/api/members/:id/scores', async (req) => {
     const { month } = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }).parse(req.query);

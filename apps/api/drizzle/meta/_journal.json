@@ -85,6 +85,13 @@
       "when": 1790710566552,
       "tag": "0011_cheerful_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792344525711,
+      "tag": "0012_group_join",
+      "breakpoints": true
     }
   ]
 }

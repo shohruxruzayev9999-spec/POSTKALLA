@@ -9,8 +9,10 @@ import {
   assertOwnerRemains,
   canAccess,
   checkAccess,
+  effectivePerms,
   localDateString,
   TRIAL_DAYS,
+  type MemberPerms,
   type Role,
 } from '@retarget/shared';
 import { z } from 'zod';
@@ -293,6 +295,8 @@ export async function listMembers(ctx: Ctx, actor: ResolvedActor) {
         position: r.m.position,
         phone: canAccess(actor, 'employee.profile', target) ? r.m.phone : null,
         salary: canAccess(actor, 'salary.view', target) ? r.m.salary : undefined,
+        perms: r.m.perms ?? {},
+        effectivePerms: effectivePerms({ ...actor, userId: r.u.id, roles: r.m.roles as Role[], perms: r.m.perms ?? {} }),
         joinedAt: r.m.joinedAt,
       };
     });
@@ -305,6 +309,15 @@ export const updateMemberInput = z.object({
   phone: z.string().trim().max(30).nullable().optional(),
   status: z.enum(['ACTIVE', 'DISABLED']).optional(),
   salary: z.number().int().min(0).max(10_000_000_000).nullable().optional(),
+  /** Switches on top of the role; `null` for a key resets it to the role default. */
+  perms: z
+    .object({
+      createTasks: z.boolean().nullable().optional(),
+      assignTasks: z.boolean().nullable().optional(),
+      projectsView: z.enum(['ALL', 'OWN']).nullable().optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 /**
@@ -344,10 +357,19 @@ export async function updateMember(ctx: Ctx, actor: ResolvedActor, targetUserId:
     assertNotSelf(actor, 'salary.manage', targetUserId);
   }
 
+  let perms: MemberPerms | undefined;
+  if (data.perms) {
+    perms = { ...(m.perms ?? {}) } as MemberPerms;
+    for (const [k, v] of Object.entries(data.perms)) {
+      if (v === null) delete (perms as Record<string, unknown>)[k];
+      else if (v !== undefined) (perms as Record<string, unknown>)[k] = v;
+    }
+  }
+
   return ctx.db.transaction(async (tx) => {
     const [updated] = await tx
       .update(memberships)
-      .set({ ...data, roles: data.roles ? [...new Set(data.roles)] : undefined })
+      .set({ ...data, perms, roles: data.roles ? [...new Set(data.roles)] : undefined })
       .where(eq(memberships.id, m.id))
       .returning();
     const [{ owners }] = (await tx

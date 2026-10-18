@@ -2,7 +2,8 @@ import { DomainError, canAccess, type TaskAction } from '@retarget/shared';
 import { and, eq } from 'drizzle-orm';
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Api, type Context } from 'grammy';
 import { findUserByTelegram, upsertTelegramUser } from '../auth/telegram.js';
-import { memberships, projects, tasks, users } from '../db/schema.js';
+import { companies, memberships, projects, tasks, users } from '../db/schema.js';
+import { claimableCompanies, deactivateGroup, groupByChat, registerGroup, requestJoin, updateGroup } from '../services/join.js';
 import { loadActor, type Ctx } from '../services/context.js';
 import type { Notifier, ReminderDelivery, SentMessage, TaskCard } from '../services/notifier.js';
 import { bindChat } from '../services/projects.js';
@@ -156,11 +157,117 @@ export function registerHandlers(bot: Bot, ctx: Ctx, botUsername: string) {
     );
   });
 
+  // ------------------------------------------------------------------ join through groups
+  const joinKb = () => new InlineKeyboard().text("✅ POSTKALLA'ga qo'shilish", 'join');
+  const joinText = (company: string) =>
+    `Salom! Bu guruh <b>${esc(company)}</b> jamoasiga ulandi.\nVazifa va eslatmalarni olish uchun pastdagi tugmani bosing — rahbar tasdiqlagach ilovada vazifalaringiz paydo bo‘ladi.`;
+  const chatTitle = (chat: { title?: string }) => chat.title ?? '';
+
+  async function postJoinMessage(chatId: number, companyId: string) {
+    const [co] = await ctx.db.select({ name: companies.name }).from(companies).where(eq(companies.id, companyId));
+    await bot.api.sendMessage(chatId, joinText(co?.name ?? ''), { parse_mode: 'HTML', reply_markup: joinKb() });
+  }
+
+  async function claimGroup(chat: { id: number; title?: string }, fromTg: number, companyId: string) {
+    const user = await findUserByTelegram(ctx.db, fromTg);
+    if (!user) throw new DomainError('FORBIDDEN', `Avval @${botUsername} ni oching`);
+    const g = await registerGroup(ctx, user.id, companyId, chat.id, chatTitle(chat));
+    if (g.kind === 'TEAM') await postJoinMessage(chat.id, companyId);
+  }
+
   bot.on('my_chat_member', async (c) => {
-    if (c.chat.type === 'private' && ['kicked', 'left'].includes(c.myChatMember.new_chat_member.status)) {
-      await ctx.db.update(users).set({ canDm: false }).where(eq(users.telegramId, c.chat.id));
+    const st = c.myChatMember.new_chat_member.status;
+    if (c.chat.type === 'private') {
+      if (['kicked', 'left'].includes(st)) await ctx.db.update(users).set({ canDm: false }).where(eq(users.telegramId, c.chat.id));
+      return;
+    }
+    if (['kicked', 'left'].includes(st)) return deactivateGroup(ctx.db, c.chat.id);
+    const was = c.myChatMember.old_chat_member.status;
+    if (!['member', 'administrator'].includes(st) || ['member', 'administrator'].includes(was)) return;
+    try {
+      const user = await findUserByTelegram(ctx.db, c.myChatMember.from.id);
+      const options = user ? await claimableCompanies(ctx.db, user.id) : [];
+      if (!options.length) {
+        await c.reply(`POSTKALLA bu guruhga ulanmadi: botni kompaniya rahbari yoki bo‘lim boshlig‘i qo‘shishi kerak. Avval @${botUsername} ni oching.`);
+        return;
+      }
+      if (options.length === 1) return await claimGroup(c.chat, c.myChatMember.from.id, options[0]!.id);
+      const kb = new InlineKeyboard();
+      for (const o of options.slice(0, 20)) kb.text(o.name, `claim:${o.id}`).row();
+      await c.reply('Bu guruhni qaysi kompaniyaga ulaymiz?', { reply_markup: kb });
+    } catch (e) {
+      await c.reply(errorText(e)).catch(() => undefined);
     }
   });
+
+  bot.callbackQuery(/^claim:([0-9a-f-]{36})$/, async (c) => {
+    try {
+      if (!c.chat || c.chat.type === 'private') return;
+      await claimGroup(c.chat, c.from.id, c.match[1]!);
+      await c.deleteMessage().catch(() => undefined);
+      await c.answerCallbackQuery();
+    } catch (e) {
+      await c.answerCallbackQuery({ text: errorText(e), show_alert: true });
+    }
+  });
+
+  bot.callbackQuery('join', async (c) => {
+    try {
+      if (!c.chat || c.chat.type === 'private') return;
+      const u = await upsertTelegramUser(ctx.db, { id: c.from.id, first_name: c.from.first_name, last_name: c.from.last_name, username: c.from.username, language_code: c.from.language_code });
+      const r = await requestJoin(ctx, u.id, c.chat.id);
+      const text =
+        r.status === 'MEMBER'
+          ? 'Siz allaqachon jamoadasiz. Ilovani oching.'
+          : r.isNew
+            ? 'So‘rov yuborildi. Rahbar tasdiqlagach Telegram’ga xabar keladi.'
+            : 'So‘rovingiz rahbarda, tasdiqlanishini kuting.';
+      await c.answerCallbackQuery({ text, show_alert: true });
+    } catch (e) {
+      await c.answerCallbackQuery({ text: errorText(e), show_alert: true });
+    }
+  });
+
+  /** Re-post the join button, or switch the group type (/jamoa, /mijoz). Only people who manage the team. */
+  async function groupManager(c: Context) {
+    if (!c.chat || c.chat.type === 'private' || !c.from) return null;
+    const g = await groupByChat(ctx.db, c.chat.id);
+    if (!g) {
+      await c.reply('Bu guruh hali POSTKALLA ga ulanmagan. Botni guruhdan chiqarib, qayta qo‘shing.');
+      return null;
+    }
+    const user = await findUserByTelegram(ctx.db, c.from.id);
+    const a = user ? await loadActor(ctx.db, user.id, g.companyId).catch(() => null) : null;
+    if (!a || !canAccess(a, 'employee.manage', { companyId: g.companyId, departmentId: g.departmentId })) {
+      await c.reply('Bu buyruq faqat jamoa rahbari uchun.');
+      return null;
+    }
+    return { g, a };
+  }
+
+  bot.command('qoshilish', async (c) => {
+    const r = await groupManager(c);
+    if (!r) return;
+    if (r.g.kind === 'CLIENT') return c.reply('Bu mijoz guruhi. Jamoa guruhiga aylantirish uchun /jamoa yozing.');
+    await postJoinMessage(r.g.chatId, r.g.companyId);
+  });
+
+  for (const [cmd, kind] of [
+    ['jamoa', 'TEAM'],
+    ['mijoz', 'CLIENT'],
+  ] as const) {
+    bot.command(cmd, async (c) => {
+      try {
+        const r = await groupManager(c);
+        if (!r) return;
+        await updateGroup(ctx, r.a, r.g.id, { kind });
+        if (kind === 'TEAM') await postJoinMessage(r.g.chatId, r.g.companyId);
+        else await c.reply('✅ Mijoz guruhi deb belgilandi. Bu yerdagi odamlar xodim bo‘lib qo‘shilmaydi.');
+      } catch (e) {
+        await c.reply(errorText(e));
+      }
+    });
+  }
 
   // ------------------------------------------------------------------ bind a group to a project
   bot.command('bind', async (c) => {

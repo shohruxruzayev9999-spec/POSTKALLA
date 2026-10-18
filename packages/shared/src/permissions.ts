@@ -138,6 +138,63 @@ export interface Actor {
   headOfDepartmentIds: string[];
   /** Projects the actor manages or is a team member of. */
   projectIds: string[];
+  /** Per-member switches set by a manager on top of the role (see {@link MemberPerms}). */
+  perms?: MemberPerms;
+}
+
+/**
+ * Per-member switches a manager sets on top of the role. A missing key means "as the role
+ * says". They never apply to an Owner or Admin — the company leaders are never restricted.
+ */
+export interface MemberPerms {
+  /** May create tasks for themself. Default: yes. */
+  createTasks?: boolean;
+  /** May give tasks to other people. Default: whatever the role allows. */
+  assignTasks?: boolean;
+  /** Which projects they see: every project, or only the ones they are on. Default: ALL. */
+  projectsView?: 'ALL' | 'OWN';
+}
+
+export const MEMBER_PERM_KEYS = ['createTasks', 'assignTasks', 'projectsView'] as const;
+
+function leader(actor: Actor): boolean {
+  return actor.roles.includes('OWNER') || actor.roles.includes('ADMIN');
+}
+
+/** "Only my projects" is on: company-wide views built from all projects are closed to them. */
+export function ownProjectsOnly(actor: Actor): boolean {
+  return actor.perms?.projectsView === 'OWN' && !leader(actor);
+}
+
+/** Effective switches, with role defaults filled in — what the UI shows as on/off. */
+export function effectivePerms(actor: Actor): Required<MemberPerms> {
+  const p = leader(actor) ? {} : (actor.perms ?? {});
+  const roleAssigns = actor.roles.some((r) => (PERMISSION_MATRIX[r]['task.manage'] ?? []).some((s) => s !== 'OWN'));
+  return {
+    createTasks: p.createTasks ?? true,
+    assignTasks: p.assignTasks ?? roleAssigns,
+    projectsView: p.projectsView ?? 'ALL',
+  };
+}
+
+/**
+ * Creating a task: for oneself it takes the `createTasks` switch; for someone else either the
+ * role's task.manage scope or the `assignTasks` switch, which a manager can also turn off.
+ */
+export function canCreateTask(actor: Actor, target: Target, assigneeUserId: string): boolean {
+  if (actor.companyId !== target.companyId) return false;
+  if (leader(actor)) return canAccess(actor, 'task.manage', target);
+  const p = actor.perms ?? {};
+  if (assigneeUserId === actor.userId) return p.createTasks !== false && canAccess(actor, 'task.manage', target);
+  if (p.assignTasks === false) return false;
+  if (p.assignTasks === true) return true;
+  return canAccess(actor, 'task.manage', { ...target, ownerUserIds: [] });
+}
+
+export function checkCreateTask(actor: Actor, target: Target, assigneeUserId: string): void {
+  if (!canCreateTask(actor, target, assigneeUserId)) {
+    throw new DomainError('FORBIDDEN', assigneeUserId === actor.userId ? "Ruxsat yo'q: sizga vazifa yaratish ruxsat etilmagan" : "Ruxsat yo'q: sizga boshqalarga vazifa berish ruxsat etilmagan");
+  }
 }
 
 /** What the action touches. Fields that don't apply are left out. */
@@ -177,6 +234,13 @@ function scopeMatches(scope: Scope, actor: Actor, target: Target, roles: readonl
 
 export function canAccess(actor: Actor, action: Action, target: Target): boolean {
   if (actor.companyId !== target.companyId) return false; // hard tenant isolation
+  // "Only my projects": a project — and a project's task — is visible only when the actor is on
+  // that project or owns the task. Tasks outside any project stay visible as before.
+  if (ownProjectsOnly(actor) && (action === 'project.view' || action === 'task.view')) {
+    if (action === 'project.view' && target.projectId === undefined) return false;
+    if (target.projectId && !actor.projectIds.includes(target.projectId) && !target.ownerUserIds?.includes(actor.userId)) return false;
+    if (action === 'project.view' && target.projectId === null) return false;
+  }
   for (const role of actor.roles) {
     for (const scope of PERMISSION_MATRIX[role][action] ?? []) {
       // Scope checks are evaluated per role so DEPT_HEAD's wider DEPARTMENT pool never leaks

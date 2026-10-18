@@ -9,6 +9,7 @@ import {
   applyTaskAction,
   canAccess,
   checkAccess,
+  checkCreateTask,
   type TaskAction,
   type TaskActorRelation,
   type TaskStatus,
@@ -123,7 +124,7 @@ async function createTaskInner(ctx: Ctx, actor: ResolvedActor, input: z.input<ty
     reviewerUserId,
     createdBy: actor.userId,
   };
-  checkAccess(actor, 'task.manage', taskTarget(draft));
+  checkCreateTask(actor, taskTarget(draft), draft.assigneeUserId);
 
   const task = await ctx.db.transaction(async (tx) => {
     // Per-company numbering; the advisory lock serialises concurrent creates in one company.
@@ -241,6 +242,10 @@ async function updateTaskInner(ctx: Ctx, actor: ResolvedActor, taskId: string, i
   const isAssignee = t.assigneeUserId === actor.userId;
   const allowed = sensitive ? manager : manager || isCreator || (onlyMaterial && isAssignee);
   if (!allowed) throw new DomainError('FORBIDDEN', "Bu vazifani o'zgartirishga ruxsat yo'q");
+  // Re-assigning is giving a task: the same switch as creating one for that person.
+  if (data.assigneeUserId && data.assigneeUserId !== t.assigneeUserId) {
+    checkCreateTask(actor, taskTarget({ ...t, assigneeUserId: data.assigneeUserId }), data.assigneeUserId);
+  }
   if (data.deadline && !data.reason) throw new DomainError('COMMENT_REQUIRED', 'Deadline o\'zgarishi sababini yozing');
   if ((data.assigneeUserId && data.assigneeUserId === (data.reviewerUserId ?? t.reviewerUserId)) || (data.reviewerUserId && data.reviewerUserId === (data.assigneeUserId ?? t.assigneeUserId))) {
     throw new DomainError('VALIDATION', "Ijrochi o'zini tekshira olmaydi");
