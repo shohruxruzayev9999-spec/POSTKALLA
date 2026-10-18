@@ -9,6 +9,7 @@ import { runDigests } from './services/digest.js';
 import type { Ctx } from './services/context.js';
 import { NullNotifier } from './services/notifier.js';
 import { anthropicClient } from './services/ai.js';
+import { alertAdmins, liveness } from './services/health.js';
 
 function env(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
@@ -37,7 +38,8 @@ async function main() {
 
   // BOT_TOKEN=dev runs the API without Telegram (local UI work only).
   const offline = botToken === 'dev';
-  const bot = offline ? null : new Bot(botToken);
+  // A hung Telegram call gives up after a minute (above the 30 s long-poll window).
+  const bot = offline ? null : new Bot(botToken, { client: { timeoutSeconds: 60 } });
   if (bot) await bot.init();
   const botUsername = bot ? bot.botInfo.username : 'dev_bot';
 
@@ -67,27 +69,44 @@ async function main() {
     }
   }
 
-  // Reminder worker: every minute, never overlapping.
+  // Reminder worker: every minute, never overlapping. Each job is isolated — one failing job
+  // never stops the others — and a failure alerts the platform admins in Telegram.
+  const job = async <T>(name: string, fn: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await fn();
+    } catch (e) {
+      app.log.error(e, `${name} failed`);
+      await alertAdmins(ctx, `job:${name}`, `${name} ishlamadi — ${(e as Error).message ?? e}`);
+      return null;
+    }
+  };
   let running = false;
   const timer = setInterval(async () => {
     if (running) return;
     running = true;
     try {
-      await runProjectMonths(ctx);
-      const r = await runReminders(ctx);
-      if (r.sent || r.skipped) app.log.info(r, 'reminders');
-      const shootsSent = await runShootReminders(ctx);
+      await job('project months', () => runProjectMonths(ctx));
+      const r = await job('reminders', () => runReminders(ctx));
+      if (r && (r.sent || r.skipped)) app.log.info(r, 'reminders');
+      const shootsSent = await job('shoot reminders', () => runShootReminders(ctx));
       if (shootsSent) app.log.info({ shootsSent }, 'shoot reminders');
-      const digestsSent = await runDigests(ctx);
+      const digestsSent = await job('daily digests', () => runDigests(ctx));
       if (digestsSent) app.log.info({ digestsSent }, 'daily digests');
-    } catch (e) {
-      app.log.error(e, 'reminders failed');
+      liveness.workerAt = ctx.now();
     } finally {
       running = false;
     }
   }, 60_000);
 
-  void bot?.start({ allowed_updates: ['message', 'callback_query', 'my_chat_member'], onStart: () => app.log.info(`bot @${botUsername} polling`) });
+  if (bot) {
+    liveness.botRunning = () => bot.isRunning();
+    bot
+      .start({ allowed_updates: ['message', 'callback_query', 'my_chat_member'], onStart: () => app.log.info(`bot @${botUsername} polling`) })
+      .catch(async (e) => {
+        app.log.error(e, 'bot polling stopped');
+        await alertAdmins(ctx, 'bot', `bot to‘xtadi — ${(e as Error).message ?? e}`);
+      });
+  }
 
   const shutdown = async () => {
     clearInterval(timer);

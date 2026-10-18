@@ -30,7 +30,7 @@ describe('project monthly kanban', () => {
   await runProjectMonths(a.ctx);
   const current = await getProjectMonth(a.ctx, pm, project.id, '2026-10');
   expect(current.tasks.map(t => t.id).sort()).toEqual([task.id, future.id].sort());
-  expect(current.tasks.find(t => t.id === task.id)).toMatchObject({ title: 'Yangi nom', deadline: task.deadline.toISOString() });
+  expect(current.tasks.find(t => t.id === task.id)).toMatchObject({ title: 'Yangi nom', deadline: task.deadline });
  });
  it('keeps completed work in the archive and catches up after a two-month outage', async () => {
   const { a, pm, project, employee, task } = await setup();
@@ -68,10 +68,13 @@ describe('project monthly kanban', () => {
   expect((await listProjectMonths(a.ctx, owner, project.id)).map(m => m.month)).toEqual(['2026-10']);
   expect((await getProjectMonth(a.ctx, owner, project.id, '2026-10')).tasks).toHaveLength(2);
  });
- it('lets the actual manager reassign the project, but rejects non-members', async () => {
-  const { a, pm, project, employee } = await setup();
-  await expect(updateProject(a.ctx, employee, project.id, { name: 'No' })).rejects.toThrow(/Faqat/);
-  await expect(updateProject(a.ctx, pm, project.id, { managerUserId: crypto.randomUUID() })).rejects.toThrow(/a.zosi/);
-  expect(await updateProject(a.ctx, pm, project.id, { managerUserId: a.users.admin.id })).toMatchObject({ managerUserId: a.users.admin.id });
+ it('lets the manager edit the project, but only the company level re-assigns its manager', async () => {
+  const { a, pm, owner, project, employee } = await setup();
+  await expect(updateProject(a.ctx, employee, project.id, { name: 'No' })).rejects.toThrow(/Ruxsat/);
+  expect(await updateProject(a.ctx, pm, project.id, { name: 'Yangi nom' })).toMatchObject({ name: 'Yangi nom' });
+  await expect(updateProject(a.ctx, pm, project.id, { managerUserId: a.users.admin.id })).rejects.toThrow(/Ruxsat/);
+  await expect(updateProject(a.ctx, pm, project.id, { managerUserId: null })).rejects.toThrow(/Ruxsat/);
+  await expect(updateProject(a.ctx, owner, project.id, { managerUserId: crypto.randomUUID() })).rejects.toThrow(/a.zosi/);
+  expect(await updateProject(a.ctx, owner, project.id, { managerUserId: a.users.admin.id })).toMatchObject({ managerUserId: a.users.admin.id });
  });
 });

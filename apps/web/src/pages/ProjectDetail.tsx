@@ -57,14 +57,13 @@ export function ProjectDetail({ id }: { id: string }) {
     <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => go('projects')}>‹ Loyihalar</button>
     <section className="card project-header" style={{ borderTop: `3px solid ${p.color}` }}>
       <div className="row between wrap">
-        <div><div className="row wrap"><h1 className="page-title">{p.name}</h1><span className="tag">{({ ACTIVE: 'Faol', PAUSED: 'Pauzada', DONE: 'Yakunlangan' } as Record<string, string>)[p.status]}</span></div><p className="small muted">{p.client ?? 'Ichki loyiha'} · Mas’ul: {manager?.name ?? 'Belgilanmagan'}</p></div>
+        <div className="row" style={{ gap: 14 }}><span title={`${label(month)} bajarilishi`}><Ring value={progress} size={52} stroke={5}><span className="xs b">{progress}%</span></Ring></span><div><div className="row wrap"><h1 className="page-title">{p.name}</h1><span className="tag">{({ ACTIVE: 'Faol', PAUSED: 'Pauzada', DONE: 'Yakunlangan' } as Record<string, string>)[p.status]}</span></div><p className="small muted">{p.client ?? 'Ichki loyiha'} · Mas’ul: {manager?.name ?? 'Belgilanmagan'}</p></div></div>
         <div className="row wrap">{manage && <button className="btn sm" onClick={() => setEditing(true)}>Loyihani tahrirlash</button>}<button className="btn sm" onClick={() => go('reports', id)}>Hisobot</button></div>
       </div>
       <div className="project-stats">
         <div><span className="small muted">Jami vazifalar</span><strong>{data.isPending ? '—' : live.length}</strong></div>
         <div><span className="small muted">Bajarilgan</span><strong style={{ color: 'var(--accent)' }}>{data.isPending ? '—' : done}</strong></div>
         <div><span className="small muted">Kechikkan</span><strong style={{ color: 'var(--danger)' }}>{data.isPending ? '—' : overdue}</strong></div>
-        <div className="row"><Ring value={progress} size={48} stroke={5}><span className="xs b">{progress}%</span></Ring><span className="small muted">{label(month)}<br />bajarilishi</span></div>
       </div>
     </section>
     <div className="row between wrap"><div className="row wrap"><h2 className="section-title">Vazifalar</h2><select aria-label="Loyiha oyi" className="input" style={{ width: 'auto' }} value={month} onChange={e => { setMonth(e.target.value); setOpenTask(null); }}>{(periods.data ?? [{ month: current, archived: false }]).map(m => <option key={m.month} value={m.month}>{label(m.month)}{m.archived ? ' · Arxiv' : m.month > current ? ' · Reja' : ' · Joriy oy'}</option>)}</select>{manage && <button className="btn sm" onClick={() => setAddingMonth(true)}>+ Yangi oy</button>}</div>{!archived && <button className="btn primary sm" onClick={() => setAddingTask(true)}>+ Vazifa</button>}</div>

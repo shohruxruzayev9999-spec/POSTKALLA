@@ -33,14 +33,23 @@ services:
       AI_MODEL: ${AI_MODEL:-}
       # Telegram ids that confirm subscription payments (comma-separated).
       PLATFORM_ADMIN_TG_IDS: ${PLATFORM_ADMIN_TG_IDS:-}
+      # Keep the heap inside the container limit so a big PDF fails one request, not the host.
+      NODE_OPTIONS: --max-old-space-size=224
     mem_limit: 350m
+    memswap_limit: 450m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
     depends_on: [db]
     environment: { PGPASSWORD: "${DB_PASSWORD}" }
-    volumes: [./backups:/backups]
-    entrypoint: ["sh", "-c", "while true; do pg_dump -h db -U erp erp | gzip > /backups/erp-$$(date +%F).sql.gz; find /backups -name '*.sql.gz' -mtime +14 -delete; sleep 86400; done"]
+    volumes: ["./backups:/backups", "./backup.sh:/backup.sh:ro"]
+    entrypoint: ["sh", "/backup.sh"]
     mem_limit: 64m
 volumes:
   pgdata:

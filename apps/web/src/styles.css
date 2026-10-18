@@ -505,7 +505,9 @@ select.fin-cell { cursor: pointer; }
 .project-detail { gap: 18px; }
 .project-header { padding: 24px; }
 .project-header p { margin-top: 8px; }
-.project-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; }
+.project-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; }
 .project-stats strong { display: block; font-size: 30px; margin-top: 6px; }
+.project-stats > div:nth-child(2) { text-align: center; }
+.project-stats > div:nth-child(3) { text-align: right; }
 .project-detail .board { min-height: 310px; }
-@media (max-width: 600px) { .project-header { padding: 16px; } .project-stats { grid-template-columns: repeat(2, 1fr); } .project-detail .page-title { font-size: 24px; } }
+@media (max-width: 600px) { .project-header { padding: 16px; } .project-stats { gap: 8px; } .project-stats strong { font-size: 24px; } .project-detail .page-title { font-size: 24px; } }

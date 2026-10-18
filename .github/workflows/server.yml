@@ -68,7 +68,7 @@ jobs:
           S="ssh -i ~/.ssh/key $USER@$HOST"
           $S 'mkdir -p ~/postkalla'
           scp -i ~/.ssh/key /tmp/postkalla-api.tar.gz /tmp/postkalla-web.tar.gz "$USER@$HOST:/tmp/"
-          scp -i ~/.ssh/key deploy/compose.shared.yml deploy/remote-deploy.sh "$USER@$HOST:postkalla/"
+          scp -i ~/.ssh/key deploy/compose.shared.yml deploy/remote-deploy.sh deploy/backup.sh "$USER@$HOST:postkalla/"
           printf '%s' "$BOT_TOKEN" | $S 'umask 077; cat > ~/postkalla/.bot_token'
           printf '%s' "$ANTHROPIC_API_KEY" | $S 'umask 077; cat > ~/postkalla/.ai_key'
           $S "bash ~/postkalla/remote-deploy.sh $DOMAIN '${PLATFORM_ADMIN_TG_IDS//[^0-9,]/}'"

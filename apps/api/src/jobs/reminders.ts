@@ -2,6 +2,7 @@ import { and, eq, gt, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import { buildReminderPlan, resolveDueSteps, type ReminderStep } from '@retarget/shared';
 import { companies, departments, memberships, projects, reminderLog, reminderMessages, taskEvents, tasks, users } from '../db/schema.js';
 import { reminderPolicyOf, scheduleOf, type Ctx } from '../services/context.js';
+import { monthAt } from '../services/projectMonths.js';
 import { taskCard } from '../services/tasks.js';
 
 /** Statuses in which the assignee owes work. REVIEW waits on the reviewer, BLOCKED on someone else. */
@@ -26,44 +27,70 @@ export async function runReminders(ctx: Ctx): Promise<{ sent: number; skipped: n
   let sent = 0;
   let skipped = 0;
   for (const { t, c, chat, pmUserId, headUserId } of rows) {
-    // The manager who hears about it: the project manager, else the reviewer, else the department head.
-    const managerUserId = [pmUserId, t.reviewerUserId, headUserId].find((id) => id && id !== t.assigneeUserId) ?? null;
-    const plan = buildReminderPlan({ deadline: t.deadline, createdAt: t.createdAt }, scheduleOf(c), reminderPolicyOf(c));
-    const handled = await ctx.db
-      .select({ key: reminderLog.stepKey, at: reminderLog.handledAt, sent: reminderLog.sent })
-      .from(reminderLog)
-      .where(and(eq(reminderLog.taskId, t.id), eq(reminderLog.deadline, t.deadline)));
-    const { send, skip } = resolveDueSteps(plan, now, new Set(handled.map((h) => h.key)));
-    if (!send.length && !skip.length) continue;
-
-    const claim = async (key: string, wasSent: boolean) => {
-      const r = await ctx.db
-        .insert(reminderLog)
-        .values({ taskId: t.id, stepKey: key, deadline: t.deadline, sent: wasSent, handledAt: now })
-        .onConflictDoNothing()
-        .returning({ key: reminderLog.stepKey });
-      return r.length > 0;
-    };
-    for (const key of skip) if (await claim(key, false)) skipped++;
-
-    for (const step of send) {
-      // CEO only if nothing moved since the manager was told ("1 soat ichida status o'zgarmasa").
-      const managerStep = handled.find((h) => h.key === 'escalate-manager' && h.sent);
-      if (step.key === 'escalate-ceo' && managerStep) {
-        const [moved] = await ctx.db
-          .select({ id: taskEvents.id })
-          .from(taskEvents)
-          .where(and(eq(taskEvents.taskId, t.id), isNotNull(taskEvents.toStatus), gt(taskEvents.createdAt, managerStep.at)))
-          .limit(1);
-        if (moved) {
-          if (await claim(step.key, false)) skipped++;
-          continue;
-        }
-      }
-      if (!(await claim(step.key, true))) continue; // another worker got it
-      await deliver(ctx, t.id, c.id, step, chat, managerUserId, t.assigneeUserId, t.isPrivate);
-      sent++;
+    // Planned for a later project month: not due for nagging yet.
+    if (t.plannedMonth && t.plannedMonth > monthAt(now, c.timezone)) continue;
+    try {
+      const r = await remindTask(ctx, now, t, c, chat, pmUserId, headUserId);
+      sent += r.sent;
+      skipped += r.skipped;
+    } catch (err) {
+      // One broken task or company never stops everyone else's reminders.
+      console.error('[reminders] task failed', t.id, err);
     }
+  }
+  return { sent, skipped };
+}
+
+async function remindTask(
+  ctx: Ctx,
+  now: Date,
+  t: typeof tasks.$inferSelect,
+  c: typeof companies.$inferSelect,
+  chat: number | null,
+  pmUserId: string | null,
+  headUserId: string | null,
+) {
+  let sent = 0;
+  let skipped = 0;
+  // The manager who hears about it: the project manager, else the reviewer, else the department
+  // head. A private 1:1 task is only ever shown to the people in it: its giver or reviewer.
+  const candidates = t.isPrivate ? [t.createdBy, t.reviewerUserId] : [pmUserId, t.reviewerUserId, headUserId];
+  const managerUserId = candidates.find((id) => id && id !== t.assigneeUserId) ?? null;
+  const plan = buildReminderPlan({ deadline: t.deadline, createdAt: t.createdAt }, scheduleOf(c), reminderPolicyOf(c));
+  const handled = await ctx.db
+    .select({ key: reminderLog.stepKey, at: reminderLog.handledAt, sent: reminderLog.sent })
+    .from(reminderLog)
+    .where(and(eq(reminderLog.taskId, t.id), eq(reminderLog.deadline, t.deadline)));
+  const { send, skip } = resolveDueSteps(plan, now, new Set(handled.map((h) => h.key)));
+  if (!send.length && !skip.length) return { sent, skipped };
+
+  const claim = async (key: string, wasSent: boolean) => {
+    const r = await ctx.db
+      .insert(reminderLog)
+      .values({ taskId: t.id, stepKey: key, deadline: t.deadline, sent: wasSent, handledAt: now })
+      .onConflictDoNothing()
+      .returning({ key: reminderLog.stepKey });
+    return r.length > 0;
+  };
+  for (const key of skip) if (await claim(key, false)) skipped++;
+
+  for (const step of send) {
+    // CEO only if nothing moved since the manager was told ("1 soat ichida status o'zgarmasa").
+    const managerStep = handled.find((h) => h.key === 'escalate-manager' && h.sent);
+    if (step.key === 'escalate-ceo' && managerStep) {
+      const [moved] = await ctx.db
+        .select({ id: taskEvents.id })
+        .from(taskEvents)
+        .where(and(eq(taskEvents.taskId, t.id), isNotNull(taskEvents.toStatus), gt(taskEvents.createdAt, managerStep.at)))
+        .limit(1);
+      if (moved) {
+        if (await claim(step.key, false)) skipped++;
+        continue;
+      }
+    }
+    if (!(await claim(step.key, true))) continue; // another worker got it
+    await deliver(ctx, t.id, c.id, step, chat, managerUserId, t.assigneeUserId, t.isPrivate);
+    sent++;
   }
   return { sent, skipped };
 }

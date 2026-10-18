@@ -2,6 +2,7 @@ import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import {
   DomainError,
   assertNotSelf,
+  assertOutranks,
   canAccess,
   checkAccess,
   isWorkingDay,
@@ -138,6 +139,7 @@ export async function editAttendance(ctx: Ctx, actor: ResolvedActor, input: z.in
   if (!m) throw notFound('Hodim');
   checkAccess(actor, 'attendance.manage', { companyId: actor.companyId, departmentId: m.departmentId, ownerUserIds: [data.userId] });
   assertNotSelf(actor, 'attendance.manage', data.userId);
+  assertOutranks(actor, m.roles);
   const schedule = scheduleOf(actor.company);
   const lateMinutes = data.checkIn ? Math.max(0, minutesAfterStart(data.checkIn, schedule)) : 0;
   const values = { checkIn: data.checkIn, checkOut: data.checkOut, note: data.note, editedBy: actor.userId, lateMinutes };

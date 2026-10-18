@@ -1,6 +1,6 @@
 import { useEffect, useId, type ReactNode } from 'react';
 import { initials, STATUS } from '../lib/format';
-import { tg } from '../lib/tg';
+import { pushBack, tg } from '../lib/tg';
 
 const PATHS: Record<string, ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" />,
@@ -231,13 +231,11 @@ export function Sheet({ open, onClose, title, children, wide }: { open: boolean;
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    tg?.BackButton.show();
-    tg?.BackButton.onClick(onClose);
+    const popBack = pushBack(onClose);
     document.body.style.overflow = 'hidden';
     return () => {
       window.removeEventListener('keydown', onKey);
-      tg?.BackButton.offClick(onClose);
-      tg?.BackButton.hide();
+      popBack();
       document.body.style.overflow = '';
     };
   }, [open, onClose]);

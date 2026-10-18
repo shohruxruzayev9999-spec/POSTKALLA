@@ -1,8 +1,8 @@
-import { calendarWrite } from './projectMonths.js';
+import { calendarWrite, monthAt } from './projectMonths.js';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DomainError, canAccess, checkAccess } from '@retarget/shared';
 import { z } from 'zod';
-import { clients, memberships, projectMembers, projects, tasks } from '../db/schema.js';
+import { clients, memberships, projectMembers, projectMonths, projects, tasks } from '../db/schema.js';
 import { notFound, type Ctx, type ResolvedActor } from './context.js';
 import { audit } from './org.js';
 
@@ -43,6 +43,7 @@ async function createProjectInner(ctx: Ctx, actor: ResolvedActor, input: z.input
       .values({ companyId: actor.companyId, name: data.name, clientId, color: data.color, managerUserId, deadline: data.deadline ?? null })
       .returning();
     await tx.insert(projectMembers).values(memberIds.map((userId) => ({ projectId: p!.id, userId })));
+    await tx.insert(projectMonths).values({ companyId: actor.companyId, projectId: p!.id, month: monthAt(ctx.now(), actor.company.timezone) });
     await audit(tx as never, actor, 'project.create', 'project', p!.id, { name: data.name });
     return p!;
   });
@@ -51,9 +52,10 @@ async function createProjectInner(ctx: Ctx, actor: ResolvedActor, input: z.input
 async function updateProjectInner(ctx: Ctx, actor: ResolvedActor, projectId: string, input: Partial<z.input<typeof projectInput>>) {
   const [p] = await ctx.db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.companyId, actor.companyId)));
   if (!p) throw notFound('Loyiha');
-  if (!actor.roles.some(r => r === 'OWNER' || r === 'ADMIN') && p.managerUserId !== actor.userId) throw new DomainError('FORBIDDEN', 'Ruxsat yo‘q. Faqat admin yoki loyiha mas’uli boshqaradi');
+  checkAccess(actor, 'project.manage', { companyId: actor.companyId, projectId });
   const data = projectInput.partial().parse(input);
   if (data.managerUserId !== undefined && data.managerUserId !== p.managerUserId) {
+    checkAccess(actor, 'client.manage', { companyId: actor.companyId }); // only company level re-assigns the PM
     if (data.managerUserId) await assertMembers(ctx, actor.companyId, [data.managerUserId]);
   }
   const { memberUserIds, clientName: _c, ...fields } = data;

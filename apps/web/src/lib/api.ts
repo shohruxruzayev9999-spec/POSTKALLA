@@ -50,6 +50,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
         .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
         .join('&')
     : '';
+  if (import.meta.env.VITE_DEMO) return (await import('./demo')).demoApi<T>(init.method ?? 'GET', path, qs);
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers['content-type'] = 'application/json';
   if (session.token) headers.authorization = `Bearer ${session.token}`;

@@ -12,9 +12,24 @@ export const MIGRATIONS_DIR = fileURLToPath(new URL('../../drizzle', import.meta
 
 export async function connect(databaseUrl: string): Promise<{ db: Db; close: () => Promise<void> }> {
   // e2-micro has 1 GB RAM: keep the pool small.
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 8 });
+  // A stuck query, lock or open transaction fails fast instead of freezing every request.
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    max: 8,
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: 30_000,
+    idle_in_transaction_session_timeout: 30_000,
+    options: '-c lock_timeout=15000',
+  });
   const db = drizzle(pool, { schema }) as unknown as Db;
-  await migrate(drizzle(pool), { migrationsFolder: MIGRATIONS_DIR });
+  // Migrations may legitimately run longer than a request.
+  const migrator = new pg.Client({ connectionString: databaseUrl });
+  await migrator.connect();
+  try {
+    await migrate(drizzle(migrator), { migrationsFolder: MIGRATIONS_DIR });
+  } finally {
+    await migrator.end();
+  }
   return { db, close: () => pool.end() };
 }
 

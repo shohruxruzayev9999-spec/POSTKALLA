@@ -15,6 +15,8 @@ const PRESETS: Array<{ name: string; kpiTemplate: string }> = [
 export function Onboarding({ user, onCreated }: { user: User; onCreated: (companyId: string) => void }) {
   const [name, setName] = useState('');
   const [picked, setPicked] = useState<string[]>(['Dizayn', 'Video / montaj', 'SMM', 'Target']);
+  const [custom, setCustom] = useState<string[]>([]);
+  const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +26,7 @@ export function Onboarding({ user, onCreated }: { user: User; onCreated: (compan
     try {
       const c = await api<{ id: string }>('/companies', {
         method: 'POST',
-        body: { name, departments: PRESETS.filter((p) => picked.includes(p.name)).map((p) => ({ name: p.name })) },
+        body: { name, departments: [...PRESETS.map((p) => p.name), ...custom].filter((n) => picked.includes(n)).map((n) => ({ name: n })) },
       });
       onCreated(c.id);
     } catch (e) {
@@ -32,6 +34,18 @@ export function Onboarding({ user, onCreated }: { user: User; onCreated: (compan
       setBusy(false);
     }
   };
+
+  // A department the agency names itself is stored exactly like a preset one.
+  const addCustom = () => {
+    const n = draft.trim().replace(/\s+/g, ' ').slice(0, 60);
+    if (!n) return;
+    const existing = [...PRESETS.map((p) => p.name), ...custom].find((x) => x.toLowerCase() === n.toLowerCase());
+    const label = existing ?? n;
+    if (!existing) setCustom((c) => [...c, n]);
+    setPicked((x) => (x.includes(label) || x.length >= 20 ? x : [...x, label]));
+    setDraft('');
+  };
+  const all = [...PRESETS.map((p) => p.name), ...custom];
 
   return (
     <div className="main" style={{ maxWidth: 520, paddingBottom: 40 }}>
@@ -57,16 +71,29 @@ export function Onboarding({ user, onCreated }: { user: User; onCreated: (compan
           <div className="field">
             <span>Bo‘limlar</span>
             <div className="chips wrap" style={{ flexWrap: 'wrap' }}>
-              {PRESETS.map((p) => (
+              {all.map((n) => (
                 <button
-                  key={p.name}
+                  key={n}
                   type="button"
-                  className={`chip ${picked.includes(p.name) ? 'on' : ''}`}
-                  onClick={() => setPicked((x) => (x.includes(p.name) ? x.filter((n) => n !== p.name) : [...x, p.name]))}
+                  className={`chip ${picked.includes(n) ? 'on' : ''}`}
+                  onClick={() => setPicked((x) => (x.includes(n) ? x.filter((y) => y !== n) : x.length >= 20 ? x : [...x, n]))}
                 >
-                  {p.name}
+                  {n}
                 </button>
               ))}
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                className="input"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustom())}
+                placeholder="O‘z bo‘limingiz, masalan: Copywriting"
+                maxLength={60}
+              />
+              <button type="button" className="btn sm" disabled={!draft.trim() || picked.length >= 20} onClick={addCustom}>
+                + Qo‘shish
+              </button>
             </div>
             <small className="faint xs">Keyinroq Sozlamalarda o‘zgartirasiz.</small>
           </div>

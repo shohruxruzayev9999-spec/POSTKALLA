@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, session as store } from './lib/api';
 import type { AppContext, CompanyRef, User } from './lib/types';
-import { tg } from './lib/tg';
+import { pushBack, tg } from './lib/tg';
 import { Home } from './pages/Home';
 import { Onboarding } from './pages/Onboarding';
 import { InviteAccept } from './pages/InviteAccept';
@@ -37,9 +37,20 @@ type Boot =
 
 async function authenticate(): Promise<Boot> {
   if (tg) {
-    const r = await api<AuthResult>('/auth/telegram', { method: 'POST', body: { initData: tg.initData } });
+    try {
+      const r = await api<AuthResult>('/auth/telegram', { method: 'POST', body: { initData: tg.initData } });
+      store.setToken(r.token);
+      return { stage: 'ready', user: r.user, companies: r.companies, startParam: r.startParam };
+    } catch (e) {
+      // Telegram keeps an app open for days with the same (by then expired) initData: fall back
+      // to the saved session instead of a login error that no retry can fix.
+      if (!(e instanceof ApiError && e.status === 401 && store.token)) throw e;
+    }
+  }
+  if (import.meta.env.VITE_DEMO) {
+    const r = await api<AuthResult>('/auth/dev', { method: 'POST', body: {} });
     store.setToken(r.token);
-    return { stage: 'ready', user: r.user, companies: r.companies, startParam: r.startParam };
+    return { stage: 'ready', user: r.user, companies: r.companies, startParam: null };
   }
   const dev = new URLSearchParams(location.search).get('dev');
   if (dev && import.meta.env.DEV) {
@@ -50,7 +61,13 @@ async function authenticate(): Promise<Boot> {
   if (store.token) {
     try {
       const r = await api<{ user: User; companies: CompanyRef[] }>('/me');
-      return { stage: 'ready', ...r, startParam: null };
+      // A session saved by another Telegram account on this device is never reused.
+      const tgUser = tg?.initDataUnsafe.user?.id;
+      if (tgUser && tgUser !== r.user.telegramId) {
+        store.setToken(null);
+        throw new ApiError(401, 'UNAUTHORIZED', 'Ilovani Telegram’da qayta oching');
+      }
+      return { stage: 'ready', ...r, startParam: tg?.initDataUnsafe.start_param ?? null };
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) store.setToken(null);
       else throw e;
@@ -164,6 +181,11 @@ const SECTION_LABEL = { main: '', work: 'Ishlab chiqarish', admin: 'Boshqaruv' }
 function Shell() {
   const route = useRoute();
   const { session, can } = useApp();
+  // Inside the app Telegram's Back button goes back a page instead of closing the Mini App.
+  useEffect(() => {
+    if (route.name === 'home' && !route.id) return;
+    return pushBack(() => (route.id ? go(route.name) : go('home')));
+  }, [route.name, route.id]);
   const nav = NAV.filter((n) => !n.when || n.when(can as never, session.ctx));
   const page = (() => {
     switch (route.name) {
